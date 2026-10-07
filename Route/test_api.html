@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API - Backend AGES</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #555;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.delete {
+            background-color: #f44336;
+        }
+        button.delete:hover {
+            background-color: #da190b;
+        }
+        button.update {
+            background-color: #2196F3;
+        }
+        button.update:hover {
+            background-color: #0b7dda;
+        }
+        .response {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            border-left: 4px solid #f44336;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        label {
+            display: inline-block;
+            width: 150px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test API - Backend AGES</h1>
+
+    <!-- Test Années Scolaires -->
+    <div class="container">
+        <h2>📅 Années Scolaires</h2>
+        <button onclick="testGetAnneesAll()">GET - Toutes les années</button>
+        <button onclick="testGetAnneeActive()">GET - Année active</button>
+        <button onclick="testCreateAnnee()">POST - Créer année</button>
+        <div id="responseAnnees" class="response"></div>
+    </div>
+
+    <!-- Test Rôles -->
+    <div class="container">
+        <h2>👥 Rôles</h2>
+        <button onclick="testGetRolesAll()">GET - Tous les rôles</button>
+        <button onclick="testCreateRole()">POST - Créer rôle</button>
+        <button onclick="testGetRoleByCode()">GET - Rôle par code</button>
+        <div id="responseRoles" class="response"></div>
+    </div>
+
+    <!-- Test Utilisateurs -->
+    <div class="container">
+        <h2>🔐 Utilisateurs</h2>
+        <button onclick="testGetUsersAll()">GET - Tous les utilisateurs</button>
+        <button onclick="testCreateUser()">POST - Créer utilisateur</button>
+        <button onclick="testAuthenticateUser()">POST - Authentifier</button>
+        <div id="responseUsers" class="response"></div>
+    </div>
+
+    <!-- Test Départements -->
+    <div class="container">
+        <h2>🏢 Départements</h2>
+        <button onclick="testGetDepartementsAll()">GET - Tous les départements</button>
+        <button onclick="testCreateDepartement()">POST - Créer département</button>
+        <button onclick="testGetDepartementByCode()">GET - Département par code</button>
+        <div id="responseDepartements" class="response"></div>
+    </div>
+
+    <!-- Test Niveaux -->
+    <div class="container">
+        <h2>📊 Niveaux</h2>
+        <button onclick="testGetNiveauxAll()">GET - Tous les niveaux</button>
+        <button onclick="testCreateNiveau()">POST - Créer niveau</button>
+        <div id="responseNiveaux" class="response"></div>
+    </div>
+
+    <!-- Test Types de Formation -->
+    <div class="container">
+        <h2>🎓 Types de Formation</h2>
+        <button onclick="testGetTypesFormationsAll()">GET - Tous les types</button>
+        <button onclick="testCreateTypeFormation()">POST - Créer type</button>
+        <div id="responseTypesFormations" class="response"></div>
+    </div>
+
+    <!-- Test Formateurs -->
+    <div class="container">
+        <h2>👨‍🏫 Formateurs</h2>
+        <button onclick="testGetFormateursAll()">GET - Tous les formateurs</button>
+        <button onclick="testGetFormateursActifs()">GET - Formateurs actifs</button>
+        <button onclick="testCreateFormateur()">POST - Créer formateur</button>
+        <div id="responseFormateurs" class="response"></div>
+    </div>
+
+    <!-- Test Salles -->
+    <div class="container">
+        <h2>🚪 Salles</h2>
+        <button onclick="testGetSallesAll()">GET - Toutes les salles</button>
+        <button onclick="testGetSallesDisponibles()">GET - Salles disponibles</button>
+        <button onclick="testCreateSalle()">POST - Créer salle</button>
+        <div id="responseSalles" class="response"></div>
+    </div>
+
+    <!-- Test Sessions -->
+    <div class="container">
+        <h2>📚 Sessions</h2>
+        <button onclick="testGetSessionsAll()">GET - Toutes les sessions</button>
+        <button onclick="testCreateSession()">POST - Créer session</button>
+        <div id="responseSessions" class="response"></div>
+    </div>
+
+    <!-- Test Groupes -->
+    <div class="container">
+        <h2>👥 Groupes</h2>
+        <button onclick="testGetGroupesAll()">GET - Tous les groupes</button>
+        <button onclick="testCreateGroupe()">POST - Créer groupe</button>
+        <div id="responseGroupes" class="response"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost/Backend_AGES/Route/api.php';
+
+        function displayResponse(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = JSON.stringify(data, null, 2);
+            element.className = isError ? 'response error' : 'response success';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(`${API_BASE_URL}/${endpoint}`, options);
+                const data = await response.json();
+                return { data, isError: !response.ok };
+            } catch (error) {
+                return { 
+                    data: { success: false, error: error.message }, 
+                    isError: true 
+                };
+            }
+        }
+
+        // ============ Années Scolaires ============
+        async function testGetAnneesAll() {
+            const result = await apiCall('annees-scolaires');
+            displayResponse('responseAnnees', result.data, result.isError);
+        }
+
+        async function testGetAnneeActive() {
+            const result = await apiCall('annees-scolaires/active');
+            displayResponse('responseAnnees', result.data, result.isError);
+        }
+
+        async function testCreateAnnee() {
+            const data = {
+                libelle: '2024-2025',
+                date_debut: '2024-09-01',
+                date_fin: '2025-06-30',
+                statut: 1
+            };
+            const result = await apiCall('annees-scolaires', 'POST', data);
+            displayResponse('responseAnnees', result.data, result.isError);
+        }
+
+        // ============ Rôles ============
+        async function testGetRolesAll() {
+            const result = await apiCall('roles');
+            displayResponse('responseRoles', result.data, result.isError);
+        }
+
+        async function testCreateRole() {
+            const data = {
+                code: 'admin',
+                nom: 'Administrateur'
+            };
+            const result = await apiCall('roles', 'POST', data);
+            displayResponse('responseRoles', result.data, result.isError);
+        }
+
+        async function testGetRoleByCode() {
+            const result = await apiCall('roles/code/admin');
+            displayResponse('responseRoles', result.data, result.isError);
+        }
+
+        // ============ Utilisateurs ============
+        async function testGetUsersAll() {
+            const result = await apiCall('users');
+            displayResponse('responseUsers', result.data, result.isError);
+        }
+
+        async function testCreateUser() {
+            const data = {
+                nom: 'Diop',
+                prenom: 'Amadou',
+                email: 'amadou.diop@example.com',
+                telephone: '771234567',
+                password: 'password123',
+                role_id: 1,
+                actif: 1
+            };
+            const result = await apiCall('users', 'POST', data);
+            displayResponse('responseUsers', result.data, result.isError);
+        }
+
+        async function testAuthenticateUser() {
+            const data = {
+                email: 'amadou.diop@example.com',
+                password: 'password123'
+            };
+            const result = await apiCall('users/authenticate', 'POST', data);
+            displayResponse('responseUsers', result.data, result.isError);
+        }
+
+        // ============ Départements ============
+        async function testGetDepartementsAll() {
+            const result = await apiCall('departements');
+            displayResponse('responseDepartements', result.data, result.isError);
+        }
+
+        async function testCreateDepartement() {
+            const data = {
+                code: 'ANGLAIS',
+                libelle: 'Département d\'Anglais'
+            };
+            const result = await apiCall('departements', 'POST', data);
+            displayResponse('responseDepartements', result.data, result.isError);
+        }
+
+        async function testGetDepartementByCode() {
+            const result = await apiCall('departements/code/ANGLAIS');
+            displayResponse('responseDepartements', result.data, result.isError);
+        }
+
+        // ============ Niveaux ============
+        async function testGetNiveauxAll() {
+            const result = await apiCall('niveaux');
+            displayResponse('responseNiveaux', result.data, result.isError);
+        }
+
+        async function testCreateNiveau() {
+            const data = {
+                libelle: 'Débutant'
+            };
+            const result = await apiCall('niveaux', 'POST', data);
+            displayResponse('responseNiveaux', result.data, result.isError);
+        }
+
+        // ============ Types de Formation ============
+        async function testGetTypesFormationsAll() {
+            const result = await apiCall('types-formations');
+            displayResponse('responseTypesFormations', result.data, result.isError);
+        }
+
+        async function testCreateTypeFormation() {
+            const data = {
+                libelle: 'Formation Intensive'
+            };
+            const result = await apiCall('types-formations', 'POST', data);
+            displayResponse('responseTypesFormations', result.data, result.isError);
+        }
+
+        // ============ Formateurs ============
+        async function testGetFormateursAll() {
+            const result = await apiCall('formateurs');
+            displayResponse('responseFormateurs', result.data, result.isError);
+        }
+
+        async function testGetFormateursActifs() {
+            const result = await apiCall('formateurs/actifs');
+            displayResponse('responseFormateurs', result.data, result.isError);
+        }
+
+        async function testCreateFormateur() {
+            const data = {
+                matricule: 'FOR-001',
+                nom: 'Sall',
+                prenom: 'Ibrahim',
+                password: 'password123',
+                telephone: '778765432',
+                email: 'ibrahim.sall@ages.sn',
+                actif: 1
+            };
+            const result = await apiCall('formateurs', 'POST', data);
+            displayResponse('responseFormateurs', result.data, result.isError);
+        }
+
+        // ============ Salles ============
+        async function testGetSallesAll() {
+            const result = await apiCall('salles');
+            displayResponse('responseSalles', result.data, result.isError);
+        }
+
+        async function testGetSallesDisponibles() {
+            const result = await apiCall('salles/disponibles');
+            displayResponse('responseSalles', result.data, result.isError);
+        }
+
+        async function testCreateSalle() {
+            const data = {
+                code: 'S01',
+                libelle: 'Salle 01',
+                capacite: 20,
+                statut: 'disponible'
+            };
+            const result = await apiCall('salles', 'POST', data);
+            displayResponse('responseSalles', result.data, result.isError);
+        }
+
+        // ============ Sessions ============
+        async function testGetSessionsAll() {
+            const result = await apiCall('sessions');
+            displayResponse('responseSessions', result.data, result.isError);
+        }
+
+        async function testCreateSession() {
+            const data = {
+                id_annee: 1,
+                id_type_formation: 1,
+                id_niveau: 1,
+                code: 'ANG-A1-2024',
+                libelle: 'Anglais Débutant A1',
+                date_debut: '2024-09-01',
+                date_fin: '2024-12-15',
+                statut: 'planifiee'
+            };
+            const result = await apiCall('sessions', 'POST', data);
+            displayResponse('responseSessions', result.data, result.isError);
+        }
+
+        // ============ Groupes ============
+        async function testGetGroupesAll() {
+            const result = await apiCall('groupes');
+            displayResponse('responseGroupes', result.data, result.isError);
+        }
+
+        async function testCreateGroupe() {
+            const data = {
+                id_session: 1,
+                code: 'G1',
+                libelle: 'Groupe 1',
+                jour_semaine: 1,
+                capacite: 20,
+                statut: 1
+            };
+            const result = await apiCall('groupes', 'POST', data);
+            displayResponse('responseGroupes', result.data, result.isError);
+        }
+    </script>
+</body>
+</html>

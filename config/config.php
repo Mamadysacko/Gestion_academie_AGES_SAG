@@ -15,7 +15,7 @@ define('APP_URL', 'http://localhost/Serveur_AGES');
 // Database Configuration (XAMPP MySQL)
 define('DB_HOST', '127.0.0.1');
 define('DB_PORT', '3306');
-define('DB_NAME', 'academie_langues2');
+define('DB_NAME', 'academie_langues3');
 define('DB_USER', 'root');
 define('DB_PASS', 'makossa');
 define('DB_CHARSET', 'utf8mb4');
