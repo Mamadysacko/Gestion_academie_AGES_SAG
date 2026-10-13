@@ -68,6 +68,8 @@ if ($resource === 'groupes') {
                 $controller->getWithSession((int)$param1);
             } elseif ($param2 === 'places-restantes') {
                 $controller->getPlacesRestantes((int)$param1);
+            } elseif ($param2 === 'salles') {
+                $controller->getSalles((int)$param1);
             } elseif ($param2 === null) {
                 $controller->getById((int)$param1);
             } else {

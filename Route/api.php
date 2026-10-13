@@ -22,7 +22,14 @@
 // ── 1. Bootstrap (CORS, contrôleurs, parsing URI) ────────────────────────────
 require_once __DIR__ . '/routes/bootstrap.php';
 
-// ── 2. Dispatch vers le fichier de routes approprié ─────────────────────────
+// ── 2. Journal des opérations : on capture la réponse des écritures ─────────
+$journalWrite = $method !== 'GET';
+$journalUser  = $journalWrite ? Authorization::currentUser() : null;
+if ($journalWrite) {
+    ob_start();
+}
+
+// ── 3. Dispatch vers le fichier de routes approprié ─────────────────────────
 try {
     Authorization::authorizeRequest($resource, $method, $param1, $param2);
 
@@ -36,6 +43,10 @@ try {
         __DIR__ . '/routes/emplois.php',
         __DIR__ . '/routes/evaluations.php',
         __DIR__ . '/routes/presences.php',
+        __DIR__ . '/routes/dashboard.php',
+        __DIR__ . '/routes/journal.php',
+        __DIR__ . '/routes/rappels.php',
+        __DIR__ . '/routes/rapports.php',
     ];
 
     $handled = false;
@@ -66,4 +77,31 @@ try {
         'success' => false,
         'error'   => $e->getMessage(),
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+}
+
+// ── 4. Enregistrement de l'opération dans le journal ────────────────────────
+if ($journalWrite) {
+    $output = (string) ob_get_contents();
+    ob_end_flush();
+    try {
+        require_once __DIR__ . '/../Model/Journal.php';
+        $response = json_decode($output, true);
+        $requestBody = (string) file_get_contents('php://input');
+        $sentIdentity = json_decode($requestBody, true);
+        (new Journal())->record([
+            'user' => $journalUser ?? Authorization::currentUser(),
+            'identifiant' => is_array($sentIdentity) ? ($sentIdentity['email'] ?? null) : null,
+            'method' => $method,
+            'action' => Journal::actionFor($method, $resource, $param1, $param2),
+            'resource' => $resource,
+            'resource_id' => is_numeric($param1) ? $param1 : (is_numeric($param2) ? $param2 : null),
+            'path' => trim($uri, '/'),
+            'code' => http_response_code() ?: 200,
+            'message' => is_array($response) ? ($response['message'] ?? $response['error'] ?? null) : null,
+            'body' => $requestBody,
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+        ]);
+    } catch (Throwable $journalError) {
+        error_log('Journal des opérations indisponible : ' . $journalError->getMessage());
+    }
 }

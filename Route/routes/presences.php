@@ -30,6 +30,8 @@ if ($method === 'GET') {
         $controller->getByFormateur((int)$param2);
     } elseif ($param1 === 'emploi-du-temps' && is_numeric($param2)) {
         $controller->getByEmploiDuTemps((int)$param2);
+    } elseif ($param1 === 'feuille') {
+        $controller->feuille();
     } elseif ($param1 === 'statistiques' && is_numeric($param2)) {
         $controller->getStatistiques((int)$param2);
     } elseif (is_numeric($param1)) {
@@ -41,6 +43,8 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     if ($param1 === null) {
         $controller->create();
+    } elseif ($param1 === 'mark-bulk') {
+        $controller->markBulk();
     } elseif ($param1 === 'mark') {
         $controller->markPresence();
     } else {

@@ -4,7 +4,28 @@
  *
  * /auditeurs    → Gestion des auditeurs (apprenants)
  * /inscriptions → Inscriptions aux groupes
+ * /types-employes → Types d'employés des auditeurs
  */
+
+// ── /types-employes ──────────────────────────────────────────────────────────
+if ($resource === 'types-employes') {
+    $controller = new TypeEmployeController();
+
+    if ($method === 'GET' && $param1 === null) {
+        $controller->getAll();
+    } elseif ($method === 'GET' && is_numeric($param1)) {
+        $controller->getById((int)$param1);
+    } elseif ($method === 'POST' && $param1 === null) {
+        $controller->create();
+    } elseif ($method === 'PUT' && is_numeric($param1)) {
+        $controller->update((int)$param1);
+    } elseif ($method === 'DELETE' && is_numeric($param1)) {
+        $controller->delete((int)$param1);
+    } else {
+        throw new Exception("Méthode non autorisée.", 405);
+    }
+    return true;
+}
 
 // ── /auditeurs ───────────────────────────────────────────────────────────────
 if ($resource === 'auditeurs') {
@@ -17,6 +38,8 @@ if ($resource === 'auditeurs') {
             $controller->getByMatricule($param2);
         } elseif ($param1 === 'search' && $param2 !== null) {
             $controller->search(urldecode($param2));
+        } elseif (is_numeric($param1) && $param2 === 'dossier') {
+            $controller->dossier((int)$param1);
         } elseif (is_numeric($param1)) {
             $controller->getById((int)$param1);
         } else {

@@ -20,7 +20,9 @@ class InscriptionController
     public function getAll(): void
     {
         try {
-            $inscriptions = $this->model->getAllWithDetails();
+            $idAnnee = filter_var($_GET['id_annee'] ?? null, FILTER_VALIDATE_INT) ?: null;
+            $idSession = filter_var($_GET['id_session'] ?? null, FILTER_VALIDATE_INT) ?: null;
+            $inscriptions = $this->model->getAllWithDetails($idAnnee, $idSession);
             $this->sendResponse(200, [
                 'success' => true,
                 'data' => $inscriptions
@@ -115,15 +117,22 @@ class InscriptionController
         try {
             $data = $this->getJsonInput();
 
-            $required = ['id_auditeur', 'id_emploi_du_temps', 'id_departement', 'date_inscription'];
+            $required = ['id_auditeur', 'id_departement', 'date_inscription'];
             foreach ($required as $field) {
                 if (empty($data[$field])) {
                     $this->sendError(400, "Le champ '{$field}' est requis.");
                     return;
                 }
             }
+            if (empty($data['id_groupe']) && empty($data['id_emploi_du_temps'])) {
+                $this->sendError(400, "Indiquez le groupe et la salle de l’auditeur.");
+                return;
+            }
 
-            foreach (['id_auditeur', 'id_emploi_du_temps', 'id_departement'] as $field) {
+            foreach (['id_auditeur', 'id_departement', 'id_session', 'id_groupe', 'id_emploi_du_temps'] as $field) {
+                if (!array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+                    continue;
+                }
                 if (!filter_var($data[$field], FILTER_VALIDATE_INT) || (int) $data[$field] <= 0) {
                     $this->sendError(400, "Le champ '{$field}' doit être un entier positif.");
                     return;
@@ -143,12 +152,16 @@ class InscriptionController
                 return;
             }
 
-            $id = $this->model->createValidated($data);
+            $created = $this->model->createValidated($data);
+            $salleLabel = trim(($created['salle_code'] ?? '') . ' ' . ($created['salle_libelle'] ?? ''));
+            $message = $created['auto_repartition']
+                ? "Inscription créée. Salle attribuée automatiquement : {$salleLabel}."
+                : "Inscription créée avec succès dans la salle {$salleLabel}.";
 
             $this->sendResponse(201, [
                 'success' => true,
-                'message' => 'Inscription créée avec succès.',
-                'data' => ['id' => $id]
+                'message' => $message,
+                'data' => $created
             ]);
         } catch (DomainException $e) {
             $this->sendError(409, $e->getMessage());
@@ -175,21 +188,46 @@ class InscriptionController
             }
 
             $data = $this->getJsonInput();
-
-            if (!$data || array_diff(array_keys($data), ['statut']) || !isset($data['statut'])) {
-                $this->sendError(400, "Seul le statut de l’inscription peut être modifié.");
+            $allowed = ['id_emploi_du_temps', 'id_departement', 'date_inscription', 'statut'];
+            if (!$data || array_diff(array_keys($data), $allowed)) {
+                $this->sendError(400, "Seuls la salle (créneau), le département, la date et le statut peuvent être modifiés.");
                 return;
             }
 
-            $success = $this->model->changeStatut($id, (string) $data['statut']);
-
-            if ($success) {
-                $this->sendResponse(200, ['success' => true, 'message' => 'Inscription mise à jour avec succès.']);
-            } else {
-                $this->sendError(400, "Aucune donnée valide à mettre à jour.");
+            foreach (['id_emploi_du_temps', 'id_departement'] as $field) {
+                if (!array_key_exists($field, $data)) {
+                    continue;
+                }
+                if (!filter_var($data[$field], FILTER_VALIDATE_INT) || (int) $data[$field] <= 0) {
+                    $this->sendError(400, "Le champ '{$field}' doit être un entier positif.");
+                    return;
+                }
+                $data[$field] = (int) $data[$field];
             }
+            if (array_key_exists('date_inscription', $data)) {
+                $date = DateTime::createFromFormat('!Y-m-d', (string) $data['date_inscription']);
+                if (!$date || $date->format('Y-m-d') !== $data['date_inscription']) {
+                    $this->sendError(400, "La date d’inscription doit respecter le format AAAA-MM-JJ.");
+                    return;
+                }
+            }
+            if (array_key_exists('statut', $data) && !in_array($data['statut'], Inscription::STATUTS, true)) {
+                $this->sendError(400, "Statut invalide.");
+                return;
+            }
+
+            $this->model->updateValidated($id, $data);
+            $this->sendResponse(200, ['success' => true, 'message' => 'Inscription mise à jour avec succès.']);
+        } catch (DomainException $e) {
+            $this->sendError(409, $e->getMessage());
         } catch (InvalidArgumentException $e) {
             $this->sendError(400, $e->getMessage());
+        } catch (PDOException $e) {
+            if ((string) $e->getCode() === '23000') {
+                $this->sendError(409, "Cet auditeur possède déjà une inscription dans cette salle, ou une référence est invalide.");
+            } else {
+                $this->sendError(500, "Erreur : " . $e->getMessage());
+            }
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
         }
@@ -242,6 +280,8 @@ class InscriptionController
             } else {
                 $this->sendError(400, "Impossible de modifier le statut.");
             }
+        } catch (DomainException $e) {
+            $this->sendError(409, $e->getMessage());
         } catch (InvalidArgumentException $e) {
             $this->sendError(400, $e->getMessage());
         } catch (Exception $e) {

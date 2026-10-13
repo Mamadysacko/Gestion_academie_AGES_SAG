@@ -10,7 +10,7 @@ class Niveau extends Model
     protected string $table = 'niveaux';
 
     protected array $fillable = [
-        'libelle',
+        'libelle', 'ordre',
     ];
 
     /** Trouve un niveau par son libellé unique. */

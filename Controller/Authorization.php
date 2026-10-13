@@ -15,6 +15,7 @@ final class Authorization
         'emplois-du-temps' => 'emplois-temps',
         'auditeurs' => 'auditeurs',
         'inscriptions' => 'auditeurs',
+        'types-employes' => 'auditeurs',
         'formateurs' => 'formateurs',
         'salles' => 'salles',
         'evaluations' => 'evaluations',
@@ -23,9 +24,16 @@ final class Authorization
         'parametres-evaluation' => 'evaluations',
         'notes' => 'evaluations',
         'passages-niveaux' => 'evaluations',
+        'resultats' => 'evaluations',
+        'regles-evaluation' => 'evaluations',
+        'regles-passage' => 'evaluations',
+        'baremes-appreciation' => 'evaluations',
         'presences' => 'presences',
+        'tableau-de-bord' => 'organisation-pedagogique',
         'users' => 'utilisateurs',
         'roles' => 'utilisateurs',
+        'journal' => 'utilisateurs',
+        'rapports' => 'organisation-pedagogique',
     ];
 
     public static function currentUser(): ?array
@@ -37,7 +45,8 @@ final class Authorization
         $db = Database::getInstance();
         $stmt = $db->prepare(
             "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif,
-                    u.last_login, u.role_id, r.code AS role_code, r.nom AS role_nom,
+                    u.last_login, u.created_at, u.updated_at, u.role_id,
+                    r.code AS role_code, r.nom AS role_nom,
                     (SELECT f.id FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_id,
                     (SELECT f.matricule FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_matricule
              FROM users u
@@ -90,6 +99,13 @@ final class Authorization
 
         if ($user['role_code'] === 'admin') {
             return;
+        }
+
+        if ($resource === 'notes' && $user['role_code'] === 'formateur') {
+            throw new RuntimeException(
+                'Les formateurs doivent saisir les notes depuis leur espace, où les inscriptions sont limitées à leurs classes.',
+                403
+            );
         }
 
         $action = self::actionForRequest($method, $resource, $param1, $param2);

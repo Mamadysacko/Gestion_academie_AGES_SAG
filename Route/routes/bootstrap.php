@@ -50,13 +50,17 @@ require_once $controllersDir . 'SalleController.php';
 require_once $controllersDir . 'SessionController.php';
 require_once $controllersDir . 'GroupeController.php';
 require_once $controllersDir . 'AuditeurController.php';
+require_once $controllersDir . 'TypeEmployeController.php';
 require_once $controllersDir . 'InscriptionController.php';
 require_once $controllersDir . 'EmploiDuTempsController.php';
 require_once $controllersDir . 'EvaluationController.php';
 require_once $controllersDir . 'ParametreEvaluationController.php';
 require_once $controllersDir . 'NoteController.php';
+require_once $controllersDir . 'ResultatController.php';
 require_once $controllersDir . 'PassageNiveauController.php';
 require_once $controllersDir . 'PresenceController.php';
+require_once $controllersDir . 'DashboardController.php';
+require_once $controllersDir . 'RapportController.php';
 
 // ── Parsing de l'URI ─────────────────────────────────────────────────────────
 $method   = $_SERVER['REQUEST_METHOD'];

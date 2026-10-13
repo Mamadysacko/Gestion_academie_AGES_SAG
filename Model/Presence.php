@@ -90,6 +90,23 @@ class Presence extends Model
         );
     }
 
+    public function hasAttendanceOnDateForTrainer(int $id_inscription, string $date, int $id_formateur): bool
+    {
+        return (int) $this->fetchColumn(
+            "SELECT COUNT(*)
+             FROM {$this->table} p
+             JOIN emplois_du_temps e ON e.id = p.id_emploi_du_temps
+             WHERE p.id_inscription = :id_inscription
+               AND p.date_presence = :date_presence
+               AND e.id_formateur = :id_formateur",
+            [
+                'id_inscription' => $id_inscription,
+                'date_presence' => $date,
+                'id_formateur' => $id_formateur,
+            ]
+        ) > 0;
+    }
+
     /** Présences liées à un emploi du temps. */
     public function getByEmploiDuTemps(int $id_edt): array
     {
@@ -103,6 +120,123 @@ class Presence extends Model
              ORDER BY p.date_presence DESC, a.nom, a.prenom",
             ['id_edt' => $id_edt]
         );
+    }
+
+    /**
+     * Feuille de pointage d'une date : auditeurs attendus (inscription active, créneau du jour
+     * de la semaine, date comprise dans la session et l'année) et leur pointage éventuel.
+     * @param array $filters id_session, id_groupe, id_salle, id_formateur (facultatifs)
+     */
+    public function getFeuille(string $date, array $filters = []): array
+    {
+        $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+        if (!$parsed || $parsed->format('Y-m-d') !== $date) {
+            throw new InvalidArgumentException('La date doit respecter le format AAAA-MM-JJ.');
+        }
+        $weekday = (int) $parsed->format('N');
+        if ($weekday > 5) {
+            return ['date' => $date, 'jour_semaine' => $weekday, 'jour_de_cours' => false, 'auditeurs' => []];
+        }
+
+        $where = [];
+        $params = ['date1' => $date, 'date2' => $date, 'date3' => $date, 'date4' => $date, 'weekday' => $weekday];
+        foreach (['id_session' => 'i.id_session', 'id_groupe' => 'e.id_groupe', 'id_salle' => 'e.id_salle', 'id_formateur' => 'e.id_formateur'] as $key => $column) {
+            if (!empty($filters[$key])) {
+                $where[] = "{$column} = :{$key}";
+                $params[$key] = (int) $filters[$key];
+            }
+        }
+
+        $rows = $this->fetchAll(
+            "SELECT i.id AS id_inscription, i.id_emploi_du_temps, i.id_session, i.id_annee,
+                    a.id AS id_auditeur, a.matricule AS auditeur_matricule, a.nom AS auditeur_nom, a.prenom AS auditeur_prenom,
+                    a.sexe AS auditeur_sexe, a.telephone AS auditeur_telephone, a.position AS auditeur_position,
+                    te.libelle AS type_employe_libelle, d.code AS departement_code, d.libelle AS departement_libelle,
+                    n.libelle AS niveau_libelle, e.jour_semaine,
+                    e.id_groupe, g.code AS groupe_code, g.libelle AS groupe_libelle, g.heure_debut, g.heure_fin,
+                    s.code AS session_code, s.libelle AS session_libelle,
+                    e.id_salle, sa.code AS salle_code, sa.libelle AS salle_libelle,
+                    e.id_formateur, f.nom AS formateur_nom, f.prenom AS formateur_prenom,
+                    p.id AS id_presence, p.statut, p.observation, p.conge_date_debut, p.conge_date_fin,
+                    (SELECT CONCAT(c.conge_date_debut, '|', c.conge_date_fin) FROM presences c
+                      WHERE c.id_inscription = i.id AND c.statut = 'conge'
+                        AND :date3 BETWEEN c.conge_date_debut AND c.conge_date_fin
+                      ORDER BY c.conge_date_debut DESC LIMIT 1) AS conge_en_cours
+             FROM inscriptions i
+             JOIN auditeurs a ON a.id = i.id_auditeur
+             LEFT JOIN types_employes te ON te.id = a.id_type_employe
+             JOIN departements d ON d.id = i.id_departement
+             JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
+             JOIN groupes g ON g.id = e.id_groupe
+             JOIN sessions s ON s.id = i.id_session
+             JOIN niveaux n ON n.id = s.id_niveau
+             JOIN annees_scolaires an ON an.id = i.id_annee
+             JOIN salles sa ON sa.id = e.id_salle
+             JOIN formateurs f ON f.id = e.id_formateur
+             LEFT JOIN presences p ON p.id_inscription = i.id AND p.date_presence = :date4
+             WHERE i.statut = 'active' AND e.statut = 1 AND g.statut = 1
+               AND e.jour_semaine = :weekday
+               AND :date1 BETWEEN s.date_debut AND s.date_fin
+               AND :date2 BETWEEN an.date_debut AND an.date_fin"
+            . ($where ? ' AND ' . implode(' AND ', $where) : '')
+            . ' ORDER BY s.code, g.code, sa.code, a.nom, a.prenom',
+            $params
+        );
+
+        foreach ($rows as &$row) {
+            if ($row['conge_en_cours'] !== null) {
+                [$start, $end] = explode('|', $row['conge_en_cours']);
+                $row['conge_en_cours'] = ['debut' => $start, 'fin' => $end];
+            }
+        }
+        unset($row);
+
+        return ['date' => $date, 'jour_semaine' => $weekday, 'jour_de_cours' => true, 'auditeurs' => $rows];
+    }
+
+    /**
+     * Pointe plusieurs inscriptions à la même date. Un auditeur en congé sur cette date
+     * reste automatiquement « congé » (avec sa période) lorsqu'on le marque présent.
+     * @return array{saved:int, errors:array}
+     */
+    public function markBulk(string $date, string $statut, array $inscriptionIds, ?int $trainerId = null): array
+    {
+        $this->assertIn($statut, self::STATUTS, 'statut');
+        if ($statut === 'conge') {
+            throw new InvalidArgumentException('Un congé se saisit individuellement avec ses dates de début et de fin.');
+        }
+        $saved = 0;
+        $errors = [];
+        foreach (array_unique(array_map('intval', $inscriptionIds)) as $id) {
+            try {
+                $context = $this->fetchOne(
+                    "SELECT e.id_formateur,
+                            (SELECT CONCAT(c.conge_date_debut, '|', c.conge_date_fin) FROM presences c
+                              WHERE c.id_inscription = i.id AND c.statut = 'conge'
+                                AND :date BETWEEN c.conge_date_debut AND c.conge_date_fin LIMIT 1) AS conge
+                     FROM inscriptions i JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
+                     WHERE i.id = :id",
+                    ['id' => $id, 'date' => $date]
+                );
+                if ($context === null) {
+                    throw new DomainException('Inscription introuvable.');
+                }
+                if ($trainerId !== null && (int) $context['id_formateur'] !== $trainerId) {
+                    throw new DomainException('Cet auditeur ne fait pas partie de vos classes.');
+                }
+                $finalStatus = $statut;
+                $start = $end = null;
+                if ($context['conge'] !== null && $statut === 'present') {
+                    $finalStatus = 'conge';
+                    [$start, $end] = explode('|', $context['conge']);
+                }
+                $this->markPresence($id, $date, $finalStatus, (int) $context['id_formateur'], null, null, $start, $end);
+                $saved++;
+            } catch (InvalidArgumentException | DomainException $e) {
+                $errors[] = ['id_inscription' => $id, 'error' => $e->getMessage()];
+            }
+        }
+        return ['saved' => $saved, 'errors' => $errors];
     }
 
     /**
@@ -128,6 +262,9 @@ class Presence extends Model
         if (!$parsedDate || $parsedDate->format('Y-m-d') !== $date) {
             throw new InvalidArgumentException('La date de présence doit respecter le format AAAA-MM-JJ.');
         }
+        if ($date > date('Y-m-d')) {
+            throw new DomainException('Un pointage ne peut pas être enregistré pour une date future.');
+        }
         if (strlen((string) $observation) > 255) {
             throw new InvalidArgumentException('L’observation ne peut pas dépasser 255 caractères.');
         }
@@ -147,9 +284,15 @@ class Presence extends Model
 
         $schedule = $this->fetchOne(
             "SELECT i.statut AS inscription_statut,
-                    e.id AS id_edt, e.id_formateur, e.jour_semaine, e.statut AS edt_actif
+                    e.id AS id_edt, e.id_formateur, e.jour_semaine, e.statut AS edt_actif,
+                    g.jour_semaine AS groupe_jour_semaine,
+                    an.date_debut AS annee_date_debut, an.date_fin AS annee_date_fin,
+                    se.date_debut AS session_date_debut, se.date_fin AS session_date_fin
              FROM inscriptions i
              JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
+             JOIN groupes g ON g.id = e.id_groupe
+             JOIN annees_scolaires an ON an.id = e.id_annee
+             JOIN sessions se ON se.id = i.id_session
              WHERE i.id = :id_inscription",
             ['id_inscription' => $id_inscription]
         );
@@ -159,13 +302,30 @@ class Presence extends Model
         if (!(bool) $schedule['edt_actif']) {
             throw new DomainException('L’emploi du temps de cette inscription est inactif.');
         }
-        if ($id_edt !== null && $id_edt !== (int) $schedule['id_edt']) {
+        if ($id_edt === null || $id_edt <= 0) {
+            $id_edt = (int) $schedule['id_edt'];
+        } elseif ($id_edt !== (int) $schedule['id_edt']) {
             throw new DomainException('L’emploi du temps ne correspond pas à celui de l’inscription.');
         }
-        if ($id_formateur !== (int) $schedule['id_formateur']) {
+        if ($id_formateur <= 0) {
+            $id_formateur = (int) $schedule['id_formateur'];
+        } elseif ($id_formateur !== (int) $schedule['id_formateur']) {
             throw new DomainException('Le formateur ne correspond pas au créneau attribué.');
         }
-        if ((int) $parsedDate->format('N') !== (int) $schedule['jour_semaine']) {
+        if ($date < $schedule['annee_date_debut'] || $date > $schedule['annee_date_fin']) {
+            throw new DomainException('La date choisie ne se trouve pas dans la période de l’année scolaire.');
+        }
+        if ($date < $schedule['session_date_debut'] || $date > $schedule['session_date_fin']) {
+            throw new DomainException('La date choisie est en dehors de la période de la session.');
+        }
+        $attendanceDate = DateTime::createFromFormat('!Y-m-d', $date);
+        if (!$attendanceDate) {
+            throw new InvalidArgumentException('La date de présence est invalide.');
+        }
+        $weekday = (int) $attendanceDate->format('N');
+        if ($weekday !== (int) $schedule['groupe_jour_semaine']
+            || $weekday !== (int) $schedule['jour_semaine']
+        ) {
             throw new DomainException('La date choisie ne correspond pas au jour hebdomadaire du groupe.');
         }
 

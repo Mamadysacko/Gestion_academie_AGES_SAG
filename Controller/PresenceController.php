@@ -93,6 +93,64 @@ class PresenceController
         $this->markPresence();
     }
 
+    /**
+     * Feuille de pointage : auditeurs attendus à une date (aujourd'hui par défaut).
+     * GET /presences/feuille?date=&id_session=&id_groupe=&id_salle=&id_formateur=
+     */
+    public function feuille(?int $trainerId = null): void
+    {
+        try {
+            $date = (string) ($_GET['date'] ?? date('Y-m-d'));
+            $filters = [];
+            foreach (['id_session', 'id_groupe', 'id_salle', 'id_formateur'] as $key) {
+                $value = filter_var($_GET[$key] ?? null, FILTER_VALIDATE_INT);
+                if ($value) {
+                    $filters[$key] = $value;
+                }
+            }
+            if ($trainerId !== null) {
+                $filters['id_formateur'] = $trainerId;
+            }
+            $this->sendResponse(200, ['success' => true, 'data' => $this->model->getFeuille($date, $filters) + ['aujourdhui' => date('Y-m-d')]]);
+        } catch (InvalidArgumentException $e) {
+            $this->sendError(400, $e->getMessage());
+        } catch (Exception $e) {
+            $this->sendError(500, "Erreur : " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Pointage groupé : { date_presence, statut, ids: [id_inscription, ...] }
+     * POST /presences/mark-bulk
+     */
+    public function markBulk(?int $trainerId = null): void
+    {
+        try {
+            $data = $this->getJsonInput();
+            $date = (string) ($data['date_presence'] ?? '');
+            $ids = is_array($data['ids'] ?? null) ? $data['ids'] : [];
+            if ($ids === []) {
+                $this->sendError(400, 'Aucun auditeur à pointer.');
+                return;
+            }
+            if ($trainerId !== null && $date !== date('Y-m-d')) {
+                $this->sendError(403, 'Un formateur ne peut pointer que la date du jour (' . date('d/m/y') . ').');
+                return;
+            }
+            $result = $this->model->markBulk($date, (string) ($data['statut'] ?? 'present'), $ids, $trainerId);
+            $this->sendResponse(200, [
+                'success' => true,
+                'message' => "{$result['saved']} pointage(s) enregistré(s)."
+                    . ($result['errors'] ? ' ' . count($result['errors']) . ' refusé(s).' : ''),
+                'data' => $result,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            $this->sendError(400, $e->getMessage());
+        } catch (Exception $e) {
+            $this->sendError(500, "Erreur : " . $e->getMessage());
+        }
+    }
+
     public function update(int $id): void
     {
         try {
@@ -137,10 +195,48 @@ class PresenceController
         }
     }
 
-    public function markPresence(): void
+    public function markPresence(?int $authorizedTrainerId = null): void
     {
         try {
             $data = $this->getJsonInput();
+
+            $user = Authorization::currentUser();
+            if ($user === null) {
+                $this->sendError(401, 'Authentification requise.');
+                return;
+            }
+            if ($user['role_code'] === 'formateur') {
+                if (empty($user['formateur_id'])) {
+                    $this->sendError(403, 'Aucun profil formateur n’est associé à ce compte.');
+                    return;
+                }
+                $authorizedTrainerId = (int) $user['formateur_id'];
+            }
+            if ($authorizedTrainerId !== null) {
+                if ($user['role_code'] !== 'formateur' || (int) $user['formateur_id'] !== $authorizedTrainerId) {
+                    $this->sendError(403, 'Accès refusé pour ce pointage.');
+                    return;
+                }
+                if (isset($data['id_formateur']) && (int) $data['id_formateur'] !== $authorizedTrainerId) {
+                    $this->sendError(403, 'Un formateur ne peut pointer que ses propres classes.');
+                    return;
+                }
+                $data['id_formateur'] = $authorizedTrainerId;
+            } elseif (empty($data['id_formateur'])) {
+                if (!empty($data['id_emploi_du_temps'])) {
+                    $edtModel = new EmploiDuTemps();
+                    $edt = $edtModel->find((int) $data['id_emploi_du_temps']);
+                    if ($edt && !empty($edt['id_formateur'])) {
+                        $data['id_formateur'] = (int) $edt['id_formateur'];
+                    }
+                } elseif (!empty($data['id_inscription'])) {
+                    $inscModel = new Inscription();
+                    $insc = $inscModel->getWithDetails((int) $data['id_inscription']);
+                    if ($insc && !empty($insc['id_formateur'])) {
+                        $data['id_formateur'] = (int) $insc['id_formateur'];
+                    }
+                }
+            }
 
             $required = ['id_inscription', 'date_presence', 'statut', 'id_formateur', 'id_emploi_du_temps'];
             foreach ($required as $field) {
@@ -157,14 +253,39 @@ class PresenceController
                 }
                 $data[$field] = (int) $data[$field];
             }
+            if (!is_string($data['date_presence'])) {
+                $this->sendError(400, 'La date de présence doit être une chaîne AAAA-MM-JJ.');
+                return;
+            }
+            $parsedDate = DateTime::createFromFormat('!Y-m-d', $data['date_presence']);
+            if (!$parsedDate || $parsedDate->format('Y-m-d') !== $data['date_presence']) {
+                $this->sendError(400, 'La date de présence doit respecter le format AAAA-MM-JJ.');
+                return;
+            }
             if (!in_array($data['statut'], Presence::STATUTS, true)) {
                 $this->sendError(400, "Statut invalide. Valeurs : " . implode(', ', Presence::STATUTS));
                 return;
             }
+            if ($authorizedTrainerId !== null && $data['date_presence'] !== date('Y-m-d')) {
+                $this->sendError(403, 'Un formateur ne peut pointer que la date du jour (' . date('d/m/y') . ').');
+                return;
+            }
+
+            if ($authorizedTrainerId !== null) {
+                $action = $this->model->hasAttendanceOnDateForTrainer(
+                    $data['id_inscription'],
+                    $data['date_presence'],
+                    $authorizedTrainerId
+                ) ? 'update' : 'create';
+                if (!in_array($action, $user['permissions']['presences'] ?? [], true)) {
+                    $this->sendError(403, "Votre rôle ne permet pas cette action ({$action}) sur les présences.");
+                    return;
+                }
+            }
 
             $success = $this->model->markPresence(
                 $data['id_inscription'],
-                (string) $data['date_presence'],
+                $data['date_presence'],
                 $data['statut'],
                 $data['id_formateur'],
                 $data['id_emploi_du_temps'],

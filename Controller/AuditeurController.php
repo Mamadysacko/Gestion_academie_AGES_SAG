@@ -21,7 +21,7 @@ class AuditeurController
     public function getAll(): void
     {
         try {
-            $auditeurs = $this->model->getAll('nom ASC, prenom ASC');
+            $auditeurs = $this->model->getAllWithType();
             $this->sendResponse(200, [
                 'success' => true,
                 'data' => $auditeurs
@@ -38,8 +38,8 @@ class AuditeurController
     public function getById(int $id): void
     {
         try {
-            $auditeur = $this->model->find($id);
-            
+            $auditeur = $this->model->findWithType($id);
+
             if ($auditeur === null) {
                 $this->sendError(404, "Auditeur introuvable.");
                 return;
@@ -51,6 +51,45 @@ class AuditeurController
             ]);
         } catch (Exception $e) {
             $this->sendError(500, "Erreur lors de la récupération de l'auditeur : " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Dossier complet : identité, inscriptions et affectations, présences, notes, résultats et passages.
+     * Les présences et les résultats ne sont joints que si le rôle peut les consulter.
+     * GET /auditeurs/{id}/dossier
+     */
+    public function dossier(int $id): void
+    {
+        try {
+            $auditeur = $this->model->findWithType($id);
+            if ($auditeur === null) {
+                $this->sendError(404, "Auditeur introuvable.");
+                return;
+            }
+            $user = Authorization::currentUser();
+            $isAdmin = ($user['role_code'] ?? '') === 'admin';
+            $canRead = static fn(string $module): bool => $isAdmin || in_array('read', $user['permissions'][$module] ?? [], true);
+
+            require_once __DIR__ . '/../Model/Inscription.php';
+            $dossier = [
+                'auditeur' => $auditeur,
+                'inscriptions' => (new Inscription())->getByAuditeur($id),
+                'presences' => null,
+                'resultats' => null,
+                'notes' => null,
+            ];
+            if ($canRead('presences')) {
+                $dossier['presences'] = $this->model->getPresenceHistory($id);
+            }
+            if ($canRead('evaluations')) {
+                require_once __DIR__ . '/../Model/Resultat.php';
+                $dossier['resultats'] = (new Resultat())->getAuditeurParcours($id)['parcours'];
+                $dossier['notes'] = $this->model->getNotes($id);
+            }
+            $this->sendResponse(200, ['success' => true, 'data' => $dossier]);
+        } catch (Exception $e) {
+            $this->sendError(500, "Erreur lors du chargement du dossier : " . $e->getMessage());
         }
     }
 
@@ -131,6 +170,12 @@ class AuditeurController
                 return;
             }
 
+            $error = $this->normalizeEmployment($data);
+            if ($error !== null) {
+                $this->sendError(400, $error);
+                return;
+            }
+
             $id = $this->model->create($data);
 
             $this->sendResponse(201, [
@@ -179,6 +224,12 @@ class AuditeurController
                 return;
             }
 
+            $error = $this->normalizeEmployment($data);
+            if ($error !== null) {
+                $this->sendError(400, $error);
+                return;
+            }
+
             $success = $this->model->update($id, $data);
 
             if ($success) {
@@ -224,6 +275,36 @@ class AuditeurController
     /* ----------------------------------------------------------------
      | Helpers
      |---------------------------------------------------------------- */
+
+    /**
+     * Normalise la position et le type d'employé (champs facultatifs).
+     * @return string|null Message d'erreur ou null si valide.
+     */
+    private function normalizeEmployment(array &$data): ?string
+    {
+        if (array_key_exists('position', $data)) {
+            $data['position'] = trim((string) $data['position']);
+            if ($data['position'] === '') {
+                $data['position'] = null;
+            } elseif (mb_strlen($data['position']) > 100) {
+                return 'La position ne peut pas dépasser 100 caractères.';
+            }
+        }
+
+        if (array_key_exists('id_type_employe', $data)) {
+            if ($data['id_type_employe'] === '' || $data['id_type_employe'] === null) {
+                $data['id_type_employe'] = null;
+            } elseif (!filter_var($data['id_type_employe'], FILTER_VALIDATE_INT)
+                || !$this->model->typeEmployeExists((int) $data['id_type_employe'])
+            ) {
+                return "Le type d'employé sélectionné n'existe pas.";
+            } else {
+                $data['id_type_employe'] = (int) $data['id_type_employe'];
+            }
+        }
+
+        return null;
+    }
 
     private function getJsonInput(): array
     {

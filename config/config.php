@@ -20,6 +20,9 @@ define('DB_USER', 'root');
 define('DB_PASS', 'makossa');
 define('DB_CHARSET', 'utf8mb4');
 
+// Fuseau horaire de l'académie : la « date du jour » des pointages doit être celle de Conakry
+date_default_timezone_set('Africa/Conakry');
+
 // Debug Mode
 define('DEBUG_MODE', true); // Mettre à false en production
 

@@ -234,3 +234,14 @@
               │  Backend AGES est maintenant prêt !     │
               │  Bonne utilisation ! 🚀                 │
               └─────────────────────────────────────────┘
+
+
+conntinue en fonction des modification des fichier deja realise puis continue tres bien dans se sens
+Je termine les écrans formateurs, salles et inscriptions, puis j’applique la migration pour que le rattachement salle unique soit réellement en base.MERCI 
+MAIS APRES MES ANALYSE J'AI DE NOUVELLE MISE à JOURS EN CE QUI CONCERNE LE FONCTIONNEMENT
+1 UN FORMATEUR à APRTIENT à UN ET UNE SEUL SALLE ET VIENS TOUT LES JOURS  DE LA SEMAINE DASN LA MEME SALE
+MAIS avec LES AUDITEUR differant par jours QUI SONT AFFECTER à CETTE SALLE
+et aussi un groupe peut etre affecter à plusieur salles et quand une salle est remplie que l'incription soit automatique
+puis rendre tout propre
+un groupe contient plusieurs auditeur et les auditeur d'un groupe sont repartie dans plusieur classe [Niveau.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Niveau.php)[Inscription.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Inscription.php)[Groupe.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Groupe.php)[Session.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Session.php)[Salle.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Salle.php)[Presence.php](file;file:///c%3A/xampp/htdocs/Backend_AGES/Model/Presence.php) 
+

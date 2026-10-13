@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/../Model/EmploiDuTemps.php';
+require_once __DIR__ . '/../Model/Formateur.php';
 
 class EmploiDuTempsController
 {
@@ -17,7 +18,7 @@ class EmploiDuTempsController
     public function getAll(): void
     {
         try {
-            $edts = $this->model->getPlanningComplet();
+            $edts = $this->scopeForTrainer($this->model->getPlanningComplet());
             $this->sendResponse(200, ['success' => true, 'data' => $edts]);
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
@@ -98,7 +99,7 @@ class EmploiDuTempsController
             $data = $this->getJsonInput();
             $id_annee = isset($data['id_annee']) ? (int)$data['id_annee'] : null;
             
-            $edts = $this->model->getPlanningComplet($id_annee);
+            $edts = $this->scopeForTrainer($this->model->getPlanningComplet($id_annee));
             $this->sendResponse(200, ['success' => true, 'data' => $edts]);
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
@@ -110,7 +111,7 @@ class EmploiDuTempsController
         try {
             $data = $this->getJsonInput();
 
-            $required = ['id_annee', 'id_groupe', 'id_salle', 'id_formateur', 'jour_semaine'];
+            $required = ['id_annee', 'id_groupe', 'id_salle', 'jour_semaine'];
             foreach ($required as $field) {
                 if (empty($data[$field])) {
                     $this->sendError(400, "Le champ '{$field}' est requis.");
@@ -119,6 +120,10 @@ class EmploiDuTempsController
             }
 
             foreach (['id_annee', 'id_groupe', 'id_salle', 'id_formateur', 'jour_semaine'] as $field) {
+                if ($field === 'id_formateur' && (empty($data[$field]) || $data[$field] === '')) {
+                    $data[$field] = 0;
+                    continue;
+                }
                 if (!filter_var($data[$field], FILTER_VALIDATE_INT) || (int) $data[$field] <= 0) {
                     $this->sendError(400, "Le champ '{$field}' doit être un entier positif.");
                     return;
@@ -138,25 +143,32 @@ class EmploiDuTempsController
                 return;
             }
 
+            $resolved = $this->model->resolveTrainerRoom($data);
+            if (is_string($resolved)) {
+                $this->sendError(400, $resolved);
+                return;
+            }
+            $data['id_salle'] = $resolved[0];
+            $data['id_formateur'] = $resolved[1];
+
             $validation = $this->model->validateAssignment($data);
             if ($validation !== null) {
                 $this->sendError(400, $validation);
                 return;
             }
 
-            // Vérifier disponibilité salle
             if (!$this->model->isSalleLibre($data['id_annee'], $data['id_salle'], $data['jour_semaine'])) {
                 $this->sendError(409, "Cette salle est déjà occupée ce jour-là.");
                 return;
             }
 
-            // Vérifier disponibilité formateur
             if (!$this->model->isFormateurLibre($data['id_annee'], $data['id_formateur'], $data['jour_semaine'])) {
                 $this->sendError(409, "Ce formateur est déjà occupé ce jour-là.");
                 return;
             }
 
             $id = $this->model->create($data);
+            (new Formateur())->validateSalleAssignment($data['id_formateur'], $data['id_salle'], true);
 
             $this->sendResponse(201, [
                 'success' => true,
@@ -203,6 +215,14 @@ class EmploiDuTempsController
                 $assignment[$field] = (int) $assignment[$field];
             }
 
+            $resolved = $this->model->resolveTrainerRoom($assignment);
+            if (is_string($resolved)) {
+                $this->sendError(400, $resolved);
+                return;
+            }
+            $assignment['id_salle'] = $resolved[0];
+            $assignment['id_formateur'] = $resolved[1];
+
             $validation = $this->model->validateAssignment($assignment, $id);
             if ($validation !== null) {
                 $this->sendError(400, $validation);
@@ -220,6 +240,9 @@ class EmploiDuTempsController
             }
 
             $success = $this->model->update($id, $assignment);
+            if ($success) {
+                (new Formateur())->validateSalleAssignment($assignment['id_formateur'], $assignment['id_salle'], true);
+            }
 
             if ($success) {
                 $this->sendResponse(200, ['success' => true, 'message' => 'Emploi du temps mis à jour.']);
@@ -292,6 +315,17 @@ class EmploiDuTempsController
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
         }
+    }
+
+    /** Un formateur ne voit que ses propres créneaux (salles, groupes, auditeurs de ses affectations). */
+    private function scopeForTrainer(array $rows): array
+    {
+        $user = Authorization::currentUser();
+        if ($user === null || $user['role_code'] !== 'formateur') {
+            return $rows;
+        }
+        $trainerId = (int) ($user['formateur_id'] ?? 0);
+        return array_values(array_filter($rows, static fn($row) => (int) $row['id_formateur'] === $trainerId));
     }
 
     private function getJsonInput(): array

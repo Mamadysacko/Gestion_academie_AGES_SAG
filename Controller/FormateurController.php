@@ -218,6 +218,21 @@ class FormateurController
             }
 
             // Valeur par défaut pour actif
+            if (array_key_exists('id_salle', $data)) {
+                if ($data['id_salle'] === '' || $data['id_salle'] === null) {
+                    $data['id_salle'] = null;
+                } elseif (!filter_var($data['id_salle'], FILTER_VALIDATE_INT) || (int) $data['id_salle'] <= 0) {
+                    $this->sendError(400, "La salle rattachée doit être un identifiant positif.");
+                    return;
+                } else {
+                    $data['id_salle'] = (int) $data['id_salle'];
+                    if ($this->model->findBySalle($data['id_salle']) !== null) {
+                        $this->sendError(409, "Cette salle a déjà un formateur attitré.");
+                        return;
+                    }
+                }
+            }
+
             if (!isset($data['actif'])) {
                 $data['actif'] = 1;
             }
@@ -337,6 +352,21 @@ class FormateurController
             if (array_key_exists('actif', $data) && !in_array((string) $data['actif'], ['0', '1'], true)) {
                 $this->sendError(400, "Le statut actif doit être égal à 0 ou 1.");
                 return;
+            }
+            if (array_key_exists('id_salle', $data)) {
+                if ($data['id_salle'] === '' || $data['id_salle'] === null) {
+                    $data['id_salle'] = null;
+                } elseif (!filter_var($data['id_salle'], FILTER_VALIDATE_INT) || (int) $data['id_salle'] <= 0) {
+                    $this->sendError(400, "La salle rattachée doit être un identifiant positif.");
+                    return;
+                } else {
+                    $data['id_salle'] = (int) $data['id_salle'];
+                    $salleError = $this->model->validateSalleAssignment($id, $data['id_salle'], false);
+                    if ($salleError !== null) {
+                        $this->sendError(409, $salleError);
+                        return;
+                    }
+                }
             }
 
             // Vérification de l'unicité du matricule (si modifié)

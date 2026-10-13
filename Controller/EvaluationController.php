@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/../Model/Evaluation.php';
+require_once __DIR__ . '/../Model/ReglesEvaluation.php';
 
 class EvaluationController
 {
@@ -77,6 +78,12 @@ class EvaluationController
                 return;
             }
 
+            $numberError = $this->resolveNumber($data, (int) $data['id_session']);
+            if ($numberError !== null) {
+                $this->sendError(400, $numberError);
+                return;
+            }
+
             $id = $this->model->create($data);
 
             $this->sendResponse(201, [
@@ -94,12 +101,35 @@ class EvaluationController
     public function update(int $id): void
     {
         try {
-            if (!$this->model->exists($id)) {
+            $current = $this->model->find($id);
+            if ($current === null) {
                 $this->sendError(404, "Évaluation introuvable.");
                 return;
             }
 
             $data = $this->getJsonInput();
+            if (array_key_exists('libelle', $data)) {
+                $data['libelle'] = trim((string) $data['libelle']);
+                if ($data['libelle'] === '' || mb_strlen($data['libelle']) > 100) {
+                    $this->sendError(400, "Le libellé doit contenir entre 1 et 100 caractères.");
+                    return;
+                }
+            }
+            if (array_key_exists('date_evaluation', $data)) {
+                $date = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $data['date_evaluation']);
+                if ($date === false || $date->format('Y-m-d') !== (string) $data['date_evaluation']) {
+                    $this->sendError(400, "La date d’évaluation doit respecter le format AAAA-MM-JJ.");
+                    return;
+                }
+            }
+            if (array_key_exists('numero', $data) || array_key_exists('id_session', $data)) {
+                $data['numero'] = $data['numero'] ?? $current['numero'];
+                $numberError = $this->resolveNumber($data, (int) ($data['id_session'] ?? $current['id_session']), $id);
+                if ($numberError !== null) {
+                    $this->sendError(400, $numberError);
+                    return;
+                }
+            }
             $success = $this->model->update($id, $data);
 
             if ($success) {
@@ -110,6 +140,56 @@ class EvaluationController
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
         }
+    }
+
+    /**
+     * Crée automatiquement les évaluations prévues (1 à N) manquantes d'une session.
+     * POST /evaluations/generer/{id_session}
+     */
+    public function generer(int $id_session): void
+    {
+        try {
+            $count = (new ReglesEvaluation())->getRegles($this->model->niveauOfSession($id_session))['nb_evaluations'];
+            $created = $this->model->generateForSession($id_session, $count);
+            $this->sendResponse(201, [
+                'success' => true,
+                'message' => $created
+                    ? "{$created} évaluation(s) créée(s). Associez-leur les critères avant la saisie des notes."
+                    : "Les {$count} évaluations de cette session existent déjà.",
+                'data' => ['created' => $created],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            $this->sendError(404, $e->getMessage());
+        } catch (Exception $e) {
+            $this->sendError(500, "Erreur : " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Numéro d'évaluation : 1 à N (règles), unique dans la session ; attribué automatiquement si absent.
+     * @return string|null Message d'erreur.
+     */
+    private function resolveNumber(array &$data, int $idSession, ?int $excludeId = null): ?string
+    {
+        $max = (new ReglesEvaluation())->getRegles($this->model->niveauOfSession($idSession))['nb_evaluations'];
+        $used = $this->model->usedNumbers($idSession, $excludeId);
+        if (!isset($data['numero']) || $data['numero'] === '' || $data['numero'] === null) {
+            $free = array_values(array_diff(range(1, $max), $used));
+            if ($free === []) {
+                return "Cette session a déjà ses {$max} évaluations prévues.";
+            }
+            $data['numero'] = $free[0];
+            return null;
+        }
+        $numero = filter_var($data['numero'], FILTER_VALIDATE_INT);
+        if ($numero === false || $numero < 1 || $numero > $max) {
+            return "Le numéro d’évaluation doit être compris entre 1 et {$max}.";
+        }
+        if (in_array($numero, $used, true)) {
+            return "L’évaluation n° {$numero} existe déjà pour cette session.";
+        }
+        $data['numero'] = $numero;
+        return null;
     }
 
     public function delete(int $id): void

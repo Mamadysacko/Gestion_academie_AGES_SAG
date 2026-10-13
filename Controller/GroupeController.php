@@ -156,6 +156,11 @@ class GroupeController
                 $this->sendError(400, "Jour de semaine invalide. Valeurs acceptées : 1 (lundi) à 5 (vendredi).");
                 return;
             }
+            $hoursError = $this->normalizeHours($data);
+            if ($hoursError !== null) {
+                $this->sendError(400, $hoursError);
+                return;
+            }
 
             // Validation de la capacité si fournie
             if (isset($data['capacite']) && $data['capacite'] !== null && $data['capacite'] !== '') {
@@ -242,6 +247,11 @@ class GroupeController
                 $this->sendError(400, "Jour de semaine invalide. Valeurs acceptées : 1 (lundi) à 5 (vendredi).");
                 return;
             }
+            $hoursError = $this->normalizeHours($data, $this->model->find($id));
+            if ($hoursError !== null) {
+                $this->sendError(400, $hoursError);
+                return;
+            }
 
             // Validation de la capacité si fournie
             if (array_key_exists('capacite', $data)) {
@@ -264,16 +274,18 @@ class GroupeController
                 $data['statut'] = (int) $data['statut'];
             }
 
-            $success = $this->model->update($id, $data);
+            $success = $this->model->updateWithSchedules($id, $data);
 
             if ($success) {
                 $this->sendResponse(200, [
                     'success' => true,
-                    'message' => 'Groupe mis à jour avec succès.'
+                    'message' => 'Groupe mis à jour avec succès. Ses salles suivent automatiquement son jour de cours.'
                 ]);
             } else {
                 $this->sendError(400, "Aucune donnée valide à mettre à jour.");
             }
+        } catch (DomainException $e) {
+            $this->sendError(409, $e->getMessage());
         } catch (PDOException $e) {
             if ((string) $e->getCode() === '23000') {
                 $this->sendError(409, "Le code du groupe est déjà utilisé dans cette session ou une référence est invalide.");
@@ -318,6 +330,31 @@ class GroupeController
     }
 
     /**
+     * Salles du groupe (formateur, effectif, places, auditeurs)
+     * GET /groupes/{id}/salles
+     */
+    public function getSalles(int $id): void
+    {
+        try {
+            $groupe = $this->model->getWithSession($id);
+            if ($groupe === null) {
+                $this->sendError(404, "Groupe introuvable.");
+                return;
+            }
+
+            $this->sendResponse(200, [
+                'success' => true,
+                'data' => [
+                    'groupe' => $groupe,
+                    'salles' => $this->model->getSalles($id),
+                ]
+            ]);
+        } catch (Exception $e) {
+            $this->sendError(500, "Erreur lors de la récupération des salles du groupe : " . $e->getMessage());
+        }
+    }
+
+    /**
      * Retourne les places restantes dans un groupe
      * GET /groupes/{id}/places-restantes
      */
@@ -351,6 +388,33 @@ class GroupeController
     /* ----------------------------------------------------------------
      | Helpers
      |---------------------------------------------------------------- */
+
+    /**
+     * Horaires du groupe (HH:MM) : facultatifs, l'heure de fin doit suivre l'heure de début.
+     * @return string|null Message d'erreur.
+     */
+    private function normalizeHours(array &$data, ?array $current = null): ?string
+    {
+        foreach (['heure_debut', 'heure_fin'] as $field) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            if ($data[$field] === '' || $data[$field] === null) {
+                unset($data[$field]);
+                continue;
+            }
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/', (string) $data[$field])) {
+                return 'Les horaires doivent respecter le format HH:MM.';
+            }
+            $data[$field] = substr((string) $data[$field], 0, 5) . ':00';
+        }
+        $start = $data['heure_debut'] ?? $current['heure_debut'] ?? '08:00:00';
+        $end = $data['heure_fin'] ?? $current['heure_fin'] ?? '12:00:00';
+        if ($end <= $start) {
+            return 'L’heure de fin doit être postérieure à l’heure de début.';
+        }
+        return null;
+    }
 
     private function getJsonInput(): array
     {

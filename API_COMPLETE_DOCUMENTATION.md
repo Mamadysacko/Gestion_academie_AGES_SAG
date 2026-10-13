@@ -39,6 +39,32 @@ La création d'un utilisateur auquel le rôle `formateur` est attribué exige un
 
 Avant d'utiliser l'API après mise à jour, exécuter une fois `database/migration_role_permissions.sql` sur `academie_langues3`. Le script préserve les rôles et utilisateurs existants, puis initialise le rôle `admin`.
 
+### Profil personnel et espace formateur
+
+Les routes de profil sont liées à la session courante; aucun identifiant d'utilisateur ou de formateur n'est accepté par le client :
+
+```http
+GET /auth/profile
+PUT /auth/profile
+GET /auth/trainer-portal
+POST /auth/trainer-portal/presences
+POST /auth/trainer-portal/notes
+```
+
+`PUT /auth/profile` accepte uniquement `nom`, `prenom`, `email`, `telephone` et, facultativement, `current_password` avec `new_password`. Le rôle, l'état du compte et les permissions restent en lecture seule. Le changement de mot de passe exige le mot de passe actuel et un nouveau mot de passe d'au moins 8 caractères. Pour un formateur lié à un compte, les coordonnées et le mot de passe sont synchronisés avec son profil formateur.
+
+`GET /auth/trainer-portal` est réservé à l'utilisateur authentifié dont le rôle est `formateur` et qui possède un profil lié. Le serveur déduit le formateur de la session et limite les classes, inscriptions, présences et notes à ses propres affectations. La réponse contient les listes `schedules`, `learners`, `attendance`, `grades`, `evaluations` et `criteria`.
+
+Les données de cet espace sont toujours limitées au profil formateur lié. Les droits `presences.create` et `presences.update` sont contrôlés lors du pointage. Les historiques du portail et la saisie de notes utilisent les routes dédiées, qui n'exposent que les inscriptions des classes affectées au formateur.
+
+`POST /auth/trainer-portal/presences` permet à un formateur lié de pointer ses propres auditeurs. Le serveur déduit son identifiant de la session, vérifie l'inscription et le créneau attribués, puis exige `presences.create` pour un nouveau pointage ou `presences.update` pour modifier un pointage existant. Les administrateurs utilisent `POST /presences/mark`.
+
+`POST /auth/trainer-portal/notes` permet au formateur de saisir ou modifier une note pour une inscription active de ses classes. Le serveur vérifie l'affectation du formateur, la session de l'évaluation, le critère associé et le barème. Les routes génériques `/notes` sont interdites aux formateurs afin d'empêcher la consultation ou la modification de notes hors de leurs classes.
+
+Les permissions sont relues depuis la base à chaque requête authentifiée. L'application actualise périodiquement le profil connecté et l'espace formateur afin que les changements enregistrés dans la matrice s'appliquent sans reconnexion. Pour initialiser les droits par défaut du rôle formateur si aucun droit n'est encore enregistré sur une base existante, réexécuter `database/migration_role_permissions.sql`; le script ne remplit pas les droits d'un rôle formateur déjà configuré.
+
+Le planning actuel enregistre un jour de semaine récurrent, mais pas les heures ni les séances datées. L'historique de planning est donc celui des affectations par année scolaire; l'historique des présences et des notes conserve ses dates.
+
 ---
 
 ## 🆕 Nouveaux Endpoints (Partie 3)
@@ -366,6 +392,8 @@ GET /notes/parametre/{id_parametre}
 GET /notes/moyenne/{id_inscription}
 ```
 
+Les moyennes retournées sont pondérées selon les barèmes et normalisées sur 4 (`moyenne_sur_4`).
+
 #### Créer une note
 ```http
 POST /notes
@@ -431,7 +459,7 @@ Content-Type: application/json
     "niveau_depart": 1,
     "niveau_arrivee": 2,
     "decision": "admis",
-    "moyenne": 15.5,
+    "moyenne": 3.1,
     "date_decision": "2024-12-20",
     "observation": "Admis avec mention"
 }
@@ -445,7 +473,7 @@ Content-Type: application/json
 {
     "id_inscription": 1,
     "decision": "admis",
-    "moyenne": 15.5,
+    "moyenne": 3.1,
     "niveau_arrivee": 2,
     "observation": "Excellent travail"
 }
@@ -512,7 +540,7 @@ Content-Type: application/json
     "id_inscription": 1,
     "id_emploi_du_temps": 1,
     "id_formateur": 1,
-    "date_presence": "2024-09-15",
+    "date_presence": "2024-09-16",
     "statut": "present",
     "observation": null
 }
@@ -534,6 +562,8 @@ Content-Type: application/json
 ```
 
 **Statuts possibles** : `present`, `absent`, `permissionnaire`, `malade`, `conge`
+
+Le pointage est refusé si l'inscription ou l'affectation est inactive, si la date ne correspond pas au jour récurrent ou aux bornes de l'année scolaire, ou si la date est future.
 
 #### Mettre à jour une présence
 ```http

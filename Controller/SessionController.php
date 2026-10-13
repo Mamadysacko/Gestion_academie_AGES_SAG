@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/../Model/Session.php';
+require_once __DIR__ . '/../Model/Resultat.php';
 
 class SessionController
 {
@@ -216,7 +217,7 @@ class SessionController
             if ($success) {
                 $this->sendResponse(200, [
                     'success' => true,
-                    'message' => 'Session mise à jour avec succès.'
+                    'message' => 'Session mise à jour avec succès.' . $this->autoPassageMessage($id, $data['statut'] ?? null)
                 ]);
             } else {
                 $this->sendError(400, "Aucune donnée valide à mettre à jour.");
@@ -231,6 +232,23 @@ class SessionController
                 $this->sendError(500, "Erreur lors de la mise à jour de la session : " . $e->getMessage());
             }
         }
+    }
+
+    /**
+     * À la clôture d'une session (statut « terminee »), enregistre automatiquement les
+     * passages de niveau calculables si la règle « passage automatique » est active.
+     */
+    private function autoPassageMessage(int $id, ?string $statut): string
+    {
+        $niveau = (int) ((new Session())->find($id)['id_niveau'] ?? 0) ?: null;
+        if ($statut !== 'terminee' || !(new ReglesEvaluation())->getRegles($niveau)['passage_automatique']) {
+            return '';
+        }
+        $counts = (new Resultat())->validerPassages($id, 'automatique');
+        return sprintf(
+            ' Passages automatiques : %d admis, %d non admis, %d en attente.',
+            $counts['admis'], $counts['non_admis'], $counts['en_attente']
+        );
     }
 
     /**
@@ -299,7 +317,7 @@ class SessionController
             if ($success) {
                 $this->sendResponse(200, [
                     'success' => true,
-                    'message' => 'Statut de la session modifié avec succès.',
+                    'message' => 'Statut de la session modifié avec succès.' . $this->autoPassageMessage($id, $data['statut']),
                     'data' => ['statut' => $data['statut']]
                 ]);
             } else {

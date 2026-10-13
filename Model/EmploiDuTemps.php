@@ -2,9 +2,9 @@
 /**
  * Modèle EmploiDuTemps (table centrale : emplois_du_temps)
  *
- * Un emploi du temps = un créneau hebdomadaire (année + groupe + salle +
- * formateur + jour). Les contraintes uniques garantissent qu'une salle ou
- * un formateur ne peut pas être doublement réservé le même jour.
+ * Un créneau = un groupe dans une salle un jour donné.
+ * Un formateur appartient à une seule salle et y vient tous les jours ;
+ * les auditeurs du groupe peuvent être répartis dans plusieurs salles.
  */
 
 require_once __DIR__ . '/Model.php';
@@ -71,18 +71,44 @@ class EmploiDuTemps extends Model
         return !$this->creneauExiste('id_formateur', $id_formateur, $id_annee, $jour, $excludeId);
     }
 
+    /**
+     * Aligne formateur et salle : un formateur = une salle, tous les jours.
+     * Si le formateur n'a pas encore de salle, le rattachement est enregistré.
+     * @return array{0:int,1:int}|string Paire [id_salle, id_formateur] ou message d'erreur.
+     */
+    public function resolveTrainerRoom(array $assignment): array|string
+    {
+        require_once __DIR__ . '/Formateur.php';
+        $formateurModel = new Formateur();
+
+        $idSalle = (int) $assignment['id_salle'];
+        $idFormateur = (int) ($assignment['id_formateur'] ?? 0);
+
+        $roomTrainer = $formateurModel->findBySalle($idSalle);
+        if ($roomTrainer !== null) {
+            if ($idFormateur > 0 && $idFormateur !== (int) $roomTrainer['id']) {
+                return 'Cette salle a déjà un formateur attitré. Il y enseigne tous les jours de la semaine.';
+            }
+            $idFormateur = (int) $roomTrainer['id'];
+        } elseif ($idFormateur <= 0) {
+            return 'Attribuez d’abord un formateur à cette salle. Un formateur reste dans une seule salle.';
+        }
+
+        $error = $formateurModel->validateSalleAssignment($idFormateur, $idSalle, false);
+        if ($error !== null) {
+            return $error;
+        }
+
+        return [$idSalle, $idFormateur];
+    }
+
     public function validateAssignment(array $assignment, ?int $excludeId = null): ?string
     {
         $stmt = $this->db->prepare(
             "SELECT g.jour_semaine, g.statut AS groupe_actif,
                     s.statut AS session_statut,
-                    f.actif AS formateur_actif, sa.statut AS salle_statut,
-                    sa.capacite AS salle_capacite, g.capacite AS groupe_capacite,
-                    (SELECT COUNT(DISTINCT i.id) FROM inscriptions i
-                     JOIN emplois_du_temps enrollment_edt ON enrollment_edt.id = i.id_emploi_du_temps
-                     WHERE enrollment_edt.id_groupe = g.id
-                       AND enrollment_edt.id_annee = s.id_annee
-                       AND i.statut = 'active') AS inscrits
+                    f.actif AS formateur_actif, f.id_salle AS formateur_salle,
+                    sa.statut AS salle_statut, sa.capacite AS salle_capacite
              FROM groupes g
              JOIN sessions s ON s.id = g.id_session
              JOIN formateurs f ON f.id = :formateur_id
@@ -116,11 +142,19 @@ class EmploiDuTemps extends Model
         if ((int) $references['jour_semaine'] !== (int) $assignment['jour_semaine']) {
             return 'Le jour du créneau doit correspondre au jour hebdomadaire du groupe.';
         }
-        if ($isActive && $references['groupe_capacite'] !== null && (int) $references['inscrits'] > (int) $references['groupe_capacite']) {
-            return 'Le nombre d’inscriptions actives dépasse la capacité maximale du groupe.';
+        if ($references['formateur_salle'] !== null && (int) $references['formateur_salle'] !== (int) $assignment['id_salle']) {
+            return 'Ce formateur appartient déjà à une autre salle et y reste toute la semaine.';
         }
-        if ($isActive && $references['salle_capacite'] !== null && (int) $references['inscrits'] > (int) $references['salle_capacite']) {
-            return 'La capacité de la salle est inférieure au nombre d’inscriptions actives.';
+
+        if ($excludeId !== null) {
+            $slotCount = $this->fetchColumn(
+                "SELECT COUNT(*) FROM inscriptions
+                 WHERE id_emploi_du_temps = :id AND statut = 'active'",
+                ['id' => $excludeId]
+            );
+            if ($references['salle_capacite'] !== null && (int) $slotCount > (int) $references['salle_capacite']) {
+                return 'La capacité de la salle est inférieure au nombre d’auditeurs déjà inscrits dans cette classe.';
+            }
         }
 
         if (!$isActive) {
@@ -129,10 +163,11 @@ class EmploiDuTemps extends Model
 
         $sql = "SELECT 1 FROM {$this->table}
                 WHERE id_annee = :id_annee AND id_groupe = :id_groupe
-                  AND jour_semaine = :jour AND statut = 1";
+                  AND id_salle = :id_salle AND jour_semaine = :jour AND statut = 1";
         $params = [
             'id_annee' => (int) $assignment['id_annee'],
             'id_groupe' => (int) $assignment['id_groupe'],
+            'id_salle' => (int) $assignment['id_salle'],
             'jour' => (int) $assignment['jour_semaine'],
         ];
         if ($excludeId !== null) {
@@ -143,7 +178,7 @@ class EmploiDuTemps extends Model
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         if ($stmt->fetchColumn()) {
-            return 'Ce groupe possède déjà un créneau actif ce jour-là pour cette année.';
+            return 'Ce groupe est déjà affecté à cette salle ce jour-là.';
         }
 
         return null;
@@ -179,12 +214,14 @@ class EmploiDuTemps extends Model
                        a.libelle AS annee_libelle,
                        g.code AS groupe_code, g.libelle AS groupe_libelle,
                        g.capacite AS groupe_capacite, g.statut AS groupe_actif,
+                       g.jour_semaine AS groupe_jour_semaine, g.heure_debut, g.heure_fin,
                        sa.code AS salle_code, sa.libelle AS salle_libelle,
                        sa.capacite AS salle_capacite, sa.statut AS salle_statut,
                        f.matricule AS formateur_matricule, f.nom AS formateur_nom, f.prenom AS formateur_prenom,
                        f.actif AS formateur_actif,
                        s.id AS id_session, s.code AS session_code, s.libelle AS session_libelle,
-                       s.statut AS session_statut,
+                       s.statut AS session_statut, s.date_debut AS session_date_debut, s.date_fin AS session_date_fin,
+                       a.date_debut AS annee_date_debut, a.date_fin AS annee_date_fin,
                        (SELECT COUNT(DISTINCT i.id) FROM inscriptions i
                         WHERE i.id_emploi_du_temps = e.id AND i.statut = 'active') AS inscrits_actifs
                 FROM {$this->table} e

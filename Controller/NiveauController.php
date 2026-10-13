@@ -21,7 +21,7 @@ class NiveauController
     public function getAll(): void
     {
         try {
-            $niveaux = $this->model->getAll('libelle ASC');
+            $niveaux = $this->model->getAll('ordre ASC, libelle ASC');
             $this->sendResponse(200, [
                 'success' => true,
                 'data' => $niveaux

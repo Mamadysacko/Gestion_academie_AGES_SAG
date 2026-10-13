@@ -135,6 +135,76 @@ class Note extends Model
         ]);
     }
 
+    public function saveOrUpdateForTrainer(
+        int $trainerId,
+        int $id_evaluation,
+        int $id_parametre,
+        int $id_inscription,
+        ?float $note,
+        ?string $observation = null
+    ): bool {
+        if ($trainerId <= 0) {
+            throw new InvalidArgumentException('Le profil formateur est invalide.');
+        }
+
+        $assignment = $this->fetchOne(
+            "SELECT 1
+             FROM inscriptions i
+             JOIN emplois_du_temps edt ON edt.id = i.id_emploi_du_temps
+             JOIN groupes g ON g.id = edt.id_groupe
+             JOIN sessions s ON s.id = g.id_session
+             JOIN evaluations ev ON ev.id_session = s.id
+             JOIN evaluation_parametres ep ON ep.id_evaluation = ev.id
+             WHERE i.id = :id_inscription
+               AND i.statut = 'active'
+               AND edt.id_formateur = :trainer_id
+               AND ev.id = :id_evaluation
+               AND ep.id_parametre = :id_parametre
+             LIMIT 1",
+            [
+                'id_inscription' => $id_inscription,
+                'trainer_id' => $trainerId,
+                'id_evaluation' => $id_evaluation,
+                'id_parametre' => $id_parametre,
+            ]
+        );
+        if ($assignment === null) {
+            throw new DomainException('Vous ne pouvez saisir une note que pour un élève actif de vos classes et une évaluation correspondante.');
+        }
+        // Après validation du passage de niveau, seules l'administration peut corriger les notes.
+        if ($this->fetchOne('SELECT 1 AS ok FROM passages_niveaux WHERE id_inscription = :id LIMIT 1', ['id' => $id_inscription]) !== null) {
+            throw new DomainException('Le passage de niveau de cet auditeur est déjà validé : ses notes sont verrouillées. Contactez l’administration.');
+        }
+        if ($observation !== null && mb_strlen($observation) > 255) {
+            throw new InvalidArgumentException('L’observation ne peut pas dépasser 255 caractères.');
+        }
+        if ($observation === null) {
+            $existingObservation = $this->fetchColumn(
+                "SELECT observation
+                 FROM {$this->table}
+                 WHERE id_evaluation = :id_evaluation
+                   AND id_parametre = :id_parametre
+                   AND id_inscription = :id_inscription",
+                [
+                    'id_evaluation' => $id_evaluation,
+                    'id_parametre' => $id_parametre,
+                    'id_inscription' => $id_inscription,
+                ]
+            );
+            if ($existingObservation !== false) {
+                $observation = $existingObservation;
+            }
+        }
+
+        return $this->saveOrUpdate(
+            $id_evaluation,
+            $id_parametre,
+            $id_inscription,
+            $note,
+            $observation
+        );
+    }
+
     private function validateGradeData(array $data): void
     {
         foreach (['id_evaluation', 'id_parametre', 'id_inscription'] as $field) {
@@ -171,8 +241,8 @@ class Note extends Model
     }
 
     /**
-     * Moyenne pondérée d'une inscription, ramenée sur 20 :
-     * moyenne = SUM(note) / SUM(barème) * 20 (notes non nulles uniquement).
+     * Moyenne pondérée d'une inscription, ramenée sur 4 :
+     * moyenne = SUM(note) / SUM(barème) * 4 (notes non nulles uniquement).
      */
     public function getMoyenneInscription(int $id_inscription, ?int $id_evaluation = null): array
     {
@@ -181,7 +251,7 @@ class Note extends Model
                     COUNT(n.id_note) AS nb_notes,
                     SUM(n.note) AS total_points,
                     SUM(p.bareme) AS total_bareme,
-                    ROUND(SUM(n.note) / SUM(p.bareme) * 20, 2) AS moyenne_sur_20
+                    ROUND(SUM(n.note) / NULLIF(SUM(p.bareme), 0) * 4, 2) AS moyenne_sur_4
              FROM {$this->table} n
              JOIN parametres p ON p.id = n.id_parametre
              WHERE n.id_inscription = :id_inscription
@@ -201,7 +271,7 @@ class Note extends Model
         $result = $this->fetchOne(
             "SELECT COUNT(DISTINCT ep.id_parametre) AS total_criteres,
                     COUNT(DISTINCT CASE WHEN n.note IS NOT NULL THEN ep.id_parametre END) AS criteres_notes,
-                    ROUND(SUM(n.note) / NULLIF(SUM(CASE WHEN n.note IS NOT NULL THEN p.bareme END), 0) * 20, 2) AS moyenne_sur_20
+                    ROUND(SUM(n.note) / NULLIF(SUM(CASE WHEN n.note IS NOT NULL THEN p.bareme END), 0) * 4, 2) AS moyenne_sur_4
              FROM evaluations e
              JOIN inscriptions i ON i.id = :id_inscription
              JOIN emplois_du_temps edt ON edt.id = i.id_emploi_du_temps
@@ -219,11 +289,11 @@ class Note extends Model
 
         if ($result === null || (int) $result['total_criteres'] === 0
             || (int) $result['criteres_notes'] !== (int) $result['total_criteres']
-            || $result['moyenne_sur_20'] === null
+            || $result['moyenne_sur_4'] === null
         ) {
             return null;
         }
 
-        return (float) $result['moyenne_sur_20'];
+        return (float) $result['moyenne_sur_4'];
     }
 }
