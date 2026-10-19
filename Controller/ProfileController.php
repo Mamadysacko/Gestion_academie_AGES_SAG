@@ -319,7 +319,7 @@ final class ProfileController
     {
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        echo json_encode($data, JSON_UNESCAPED_UNICODE);
     }
 
     private function sendError(int $status, string $message): void

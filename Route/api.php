@@ -21,6 +21,13 @@
 
 // ── 1. Bootstrap (CORS, contrôleurs, parsing URI) ────────────────────────────
 require_once __DIR__ . '/routes/bootstrap.php';
+require_once __DIR__ . '/../config/ResponseCache.php';
+
+// Compression des réponses : les listes JSON se réduisent de 80 à 90 % sur le réseau.
+if (extension_loaded('zlib') && !ini_get('zlib.output_compression')
+    && str_contains($_SERVER['HTTP_ACCEPT_ENCODING'] ?? '', 'gzip')) {
+    ob_start('ob_gzhandler');
+}
 
 // ── 2. Journal des opérations : on capture la réponse des écritures ─────────
 $journalWrite = $method !== 'GET';
@@ -32,6 +39,25 @@ if ($journalWrite) {
 // ── 3. Dispatch vers le fichier de routes approprié ─────────────────────────
 try {
     Authorization::authorizeRequest($resource, $method, $param1, $param2);
+
+    // Le verrou de session PHP sérialise les requêtes d'un même navigateur : sans cette ligne,
+    // les 10 requêtes envoyées en parallèle par un écran s'exécutent l'une après l'autre.
+    // Seules les routes qui modifient la session (connexion, déconnexion, profil) la gardent ouverte.
+    if ($resource !== 'auth' && !($resource === 'users' && $param1 === 'authenticate')) {
+        session_write_close();
+    }
+
+    // Cache serveur des agrégats coûteux (tableau de bord : une cinquantaine de requêtes SQL).
+    // Il est invalidé par toute écriture passant par cette API et expire de toute façon vite.
+    $cacheKey = null;
+    if ($method === 'GET' && in_array($resource, ['tableau-de-bord', 'rappels'], true) && !empty($_SESSION['user_id'])) {
+        $cacheKey = ResponseCache::key((int) $_SESSION['user_id'], (string) ($_SERVER['REQUEST_URI'] ?? ''));
+        if (($cached = ResponseCache::read($cacheKey)) !== null) {
+            echo $cached;
+            exit;
+        }
+        ob_start();
+    }
 
     $routeFiles = [
         __DIR__ . '/routes/auth.php',
@@ -64,7 +90,19 @@ try {
         throw new Exception("Resource '{$resource}' non trouvée.", 404);
     }
 
+    if ($cacheKey !== null) {
+        $body = (string) ob_get_contents();
+        ob_end_flush();
+        if ((http_response_code() ?: 200) === 200) {
+            ResponseCache::write($cacheKey, $body);
+        }
+        $cacheKey = null;
+    }
+
 } catch (Exception $e) {
+    if (!empty($cacheKey) && ob_get_level() > 0) {
+        ob_end_clean();
+    }
     $code = $e->getCode() ?: 500;
 
     // S'assurer que le code HTTP est dans une plage valide
@@ -76,13 +114,16 @@ try {
     echo json_encode([
         'success' => false,
         'error'   => $e->getMessage(),
-    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    ], JSON_UNESCAPED_UNICODE);
 }
 
 // ── 4. Enregistrement de l'opération dans le journal ────────────────────────
 if ($journalWrite) {
     $output = (string) ob_get_contents();
     ob_end_flush();
+    if ((http_response_code() ?: 200) < 400) {
+        ResponseCache::invalidate();
+    }
     try {
         require_once __DIR__ . '/../Model/Journal.php';
         $response = json_decode($output, true);

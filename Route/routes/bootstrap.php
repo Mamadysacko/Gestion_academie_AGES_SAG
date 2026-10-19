@@ -28,6 +28,7 @@ if (in_array($origin, $allowedOrigins, true)) {
 }
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Max-Age: 86400'); // le navigateur mémorise la pré-requête CORS un jour
 header('Content-Type: application/json; charset=utf-8');
 
 // Réponse aux requêtes OPTIONS (preflight CORS)
@@ -37,30 +38,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Chargement des contrôleurs ───────────────────────────────────────────────
+// Seuls Authorization et la base sont chargés d'avance ; chaque contrôleur est chargé
+// à la demande par l'autoloader (une requête n'en utilise qu'un ou deux sur vingt-trois).
 $controllersDir = __DIR__ . '/../../Controller/';
-require_once $controllersDir . 'AnneeScolaireController.php';
-require_once $controllersDir . 'RoleController.php';
-require_once $controllersDir . 'UserController.php';
 require_once $controllersDir . 'Authorization.php';
-require_once $controllersDir . 'DepartementController.php';
-require_once $controllersDir . 'NiveauController.php';
-require_once $controllersDir . 'TypeFormationController.php';
-require_once $controllersDir . 'FormateurController.php';
-require_once $controllersDir . 'SalleController.php';
-require_once $controllersDir . 'SessionController.php';
-require_once $controllersDir . 'GroupeController.php';
-require_once $controllersDir . 'AuditeurController.php';
-require_once $controllersDir . 'TypeEmployeController.php';
-require_once $controllersDir . 'InscriptionController.php';
-require_once $controllersDir . 'EmploiDuTempsController.php';
-require_once $controllersDir . 'EvaluationController.php';
-require_once $controllersDir . 'ParametreEvaluationController.php';
-require_once $controllersDir . 'NoteController.php';
-require_once $controllersDir . 'ResultatController.php';
-require_once $controllersDir . 'PassageNiveauController.php';
-require_once $controllersDir . 'PresenceController.php';
-require_once $controllersDir . 'DashboardController.php';
-require_once $controllersDir . 'RapportController.php';
+spl_autoload_register(static function (string $class) use ($controllersDir): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $class)) {
+        return;
+    }
+    foreach ([$controllersDir, __DIR__ . '/../../Model/'] as $dir) {
+        if (is_file($dir . $class . '.php')) {
+            require_once $dir . $class . '.php';
+            return;
+        }
+    }
+});
 
 // ── Parsing de l'URI ─────────────────────────────────────────────────────────
 $method   = $_SERVER['REQUEST_METHOD'];

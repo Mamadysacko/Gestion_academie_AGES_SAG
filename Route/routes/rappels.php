@@ -17,6 +17,6 @@ if ($user === null) {
 }
 
 require_once __DIR__ . '/../../Model/Rappel.php';
-echo json_encode(['success' => true, 'data' => (new Rappel())->getRappels($user)], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+echo json_encode(['success' => true, 'data' => (new Rappel())->getRappels($user)], JSON_UNESCAPED_UNICODE);
 
 return true;

@@ -17,6 +17,6 @@ $limit = (int) ($_GET['limit'] ?? 300);
 echo json_encode([
     'success' => true,
     'data' => (new Journal())->search($filters, $limit ?: 300),
-], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+], JSON_UNESCAPED_UNICODE);
 
 return true;
