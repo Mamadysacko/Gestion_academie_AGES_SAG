@@ -27,7 +27,7 @@ class Inscription extends Model
     private const DETAIL_COLUMNS = "i.*,
                     a.matricule AS auditeur_matricule, a.nom AS auditeur_nom, a.prenom AS auditeur_prenom,
                     a.sexe AS auditeur_sexe, a.telephone AS auditeur_telephone, a.email AS auditeur_email,
-                    a.position AS auditeur_position, te.libelle AS type_employe_libelle,
+                    po.libelle AS auditeur_position, te.libelle AS type_employe_libelle,
                     d.code AS departement_code, d.libelle AS departement_libelle,
                     e.id_groupe, e.id_salle, e.id_formateur, e.jour_semaine,
                     g.code AS groupe_code, g.libelle AS groupe_libelle, g.capacite AS groupe_capacite,
@@ -38,7 +38,7 @@ class Inscription extends Model
 
     private const DETAIL_JOINS = "FROM inscriptions i
              JOIN auditeurs a ON a.id = i.id_auditeur
-             LEFT JOIN types_employes te ON te.id = a.id_type_employe
+             LEFT JOIN types_employes te ON te.id = a.id_type_employe LEFT JOIN positions po ON po.id = a.id_position
              JOIN departements d ON d.id = i.id_departement
              JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
              JOIN groupes g ON g.id = e.id_groupe
@@ -300,7 +300,7 @@ class Inscription extends Model
                         $chosen['salle_code'], $chosen['inscrits'], $chosen['salle_capacite']
                     ));
                 }
-                $update['id_emploi_du_temps'] = $newEdt;
+                $update['id_emploi_du_temps'] = (int) $chosen['id'];
                 $update['id_annee'] = (int) $chosen['id_annee'];
                 $update['id_session'] = $idSession;
             }
@@ -348,37 +348,51 @@ class Inscription extends Model
         return $group;
     }
 
-    /** Salles actives du groupe, avec leur effectif actif (hors inscription exclue). */
+    /**
+     * Salles actives du groupe (une « classe » par salle), avec leur effectif actif (hors inscription exclue).
+     * Un groupe qui vient plusieurs jours a un créneau par jour et par salle : l'inscription est rattachée
+     * au créneau du premier jour de passage, l'auditeur suit sa classe tous les jours de passage.
+     */
     private function lockGroupRooms(int $idGroupe, ?int $excludeInscription = null): array
     {
-        $slots = $this->fetchAll(
-            "SELECT e.id, e.id_annee, sa.id AS id_salle, sa.code AS salle_code, sa.libelle AS salle_libelle,
+        $rows = $this->fetchAll(
+            "SELECT e.id, e.id_annee, e.jour_semaine, sa.id AS id_salle, sa.code AS salle_code, sa.libelle AS salle_libelle,
                     sa.capacite AS salle_capacite
              FROM emplois_du_temps e
              JOIN salles sa ON sa.id = e.id_salle
              WHERE e.id_groupe = :id_groupe AND e.statut = 1
-             ORDER BY sa.code, e.id
+             ORDER BY sa.code, e.jour_semaine, e.id
              FOR UPDATE",
             ['id_groupe' => $idGroupe]
         );
-        if ($slots === []) {
+        if ($rows === []) {
             throw new DomainException('Ce groupe n’a aucune salle affectée. Affectez d’abord des salles au groupe.');
+        }
+        $slots = [];
+        foreach ($rows as $row) {
+            $roomId = (int) $row['id_salle'];
+            if (!isset($slots[$roomId])) {
+                $slots[$roomId] = $row + ['ids' => []];
+            }
+            $slots[$roomId]['ids'][] = (int) $row['id'];
         }
         foreach ($slots as &$slot) {
             $slot['inscrits'] = (int) $this->fetchColumn(
-                "SELECT COUNT(*) FROM {$this->table}
-                 WHERE id_emploi_du_temps = :id AND statut = 'active' AND id <> :exclude",
-                ['id' => (int) $slot['id'], 'exclude' => (int) $excludeInscription]
+                "SELECT COUNT(*) FROM {$this->table} i
+                 JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
+                 WHERE e.id_groupe = :groupe AND e.id_salle = :salle AND i.statut = 'active' AND i.id <> :exclude",
+                ['groupe' => $idGroupe, 'salle' => (int) $slot['id_salle'], 'exclude' => (int) $excludeInscription]
             );
         }
         unset($slot);
-        return $slots;
+        return array_values($slots);
     }
 
+    /** Classe (salle) du groupe contenant ce créneau, quel que soit le jour de passage choisi. */
     private function findSlot(array $slots, int $idEdt): ?array
     {
         foreach ($slots as $slot) {
-            if ((int) $slot['id'] === $idEdt) {
+            if (in_array($idEdt, $slot['ids'], true)) {
                 return $slot;
             }
         }

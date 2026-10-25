@@ -5,11 +5,32 @@
  * /auditeurs    → Gestion des auditeurs (apprenants)
  * /inscriptions → Inscriptions aux groupes
  * /types-employes → Types d'employés des auditeurs
+ * /positions → Positions (postes) des auditeurs
  */
 
 // ── /types-employes ──────────────────────────────────────────────────────────
 if ($resource === 'types-employes') {
     $controller = new TypeEmployeController();
+
+    if ($method === 'GET' && $param1 === null) {
+        $controller->getAll();
+    } elseif ($method === 'GET' && is_numeric($param1)) {
+        $controller->getById((int)$param1);
+    } elseif ($method === 'POST' && $param1 === null) {
+        $controller->create();
+    } elseif ($method === 'PUT' && is_numeric($param1)) {
+        $controller->update((int)$param1);
+    } elseif ($method === 'DELETE' && is_numeric($param1)) {
+        $controller->delete((int)$param1);
+    } else {
+        throw new Exception("Méthode non autorisée.", 405);
+    }
+    return true;
+}
+
+// ── /positions ───────────────────────────────────────────────────────────────
+if ($resource === 'positions') {
+    $controller = new PositionController();
 
     if ($method === 'GET' && $param1 === null) {
         $controller->getAll();

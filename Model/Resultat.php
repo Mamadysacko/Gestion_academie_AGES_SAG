@@ -65,13 +65,13 @@ class Resultat extends Model
         $enrollments = $this->fetchAll(
             "SELECT i.id AS id_inscription, i.statut AS inscription_statut, i.date_inscription,
                     i.id_auditeur, a.matricule AS auditeur_matricule, a.nom AS auditeur_nom, a.prenom AS auditeur_prenom,
-                    a.position AS auditeur_position, te.libelle AS type_employe_libelle, dp.libelle AS departement_libelle,
+                    po.libelle AS auditeur_position, te.libelle AS type_employe_libelle, dp.libelle AS departement_libelle,
                     i.id_emploi_du_temps, e.id_groupe, g.code AS groupe_code, g.libelle AS groupe_libelle,
                     e.id_salle, sa.code AS salle_code, sa.libelle AS salle_libelle,
                     e.id_formateur, f.nom AS formateur_nom, f.prenom AS formateur_prenom
              FROM inscriptions i
              JOIN auditeurs a ON a.id = i.id_auditeur
-             LEFT JOIN types_employes te ON te.id = a.id_type_employe
+             LEFT JOIN types_employes te ON te.id = a.id_type_employe LEFT JOIN positions po ON po.id = a.id_position
              JOIN departements dp ON dp.id = i.id_departement
              JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
              JOIN groupes g ON g.id = e.id_groupe
@@ -213,29 +213,64 @@ class Resultat extends Model
         ];
     }
 
+    public const DECISIONS_MANUELLES = ['admis', 'redouble', 'termine'];
+
     /**
-     * Enregistre les décisions de passage calculables d'une session et met à jour
-     * le niveau actuel des auditeurs. Les résultats « en attente » sont ignorés.
-     * En mode automatique, une décision saisie manuellement n'est jamais écrasée.
-     * @return array{validees:int, admis:int, non_admis:int, abandonne:int, en_attente:int}
+     * Enregistre la décision de passage choisie par un utilisateur habilité pour une sélection
+     * d'inscriptions d'une session — aucune décision n'est déduite de la moyenne.
+     *
+     *  - « admis »    : passe en classe supérieure (refusé s'il n'existe pas de niveau supérieur) ;
+     *  - « redouble » : reste dans le niveau de la session ;
+     *  - « termine »  : termine la formation (aucun niveau d'arrivée, le niveau actuel est conservé).
+     *
+     * Le niveau actuel de l'auditeur est mis à jour, la moyenne / présence ne sont conservées
+     * qu'à titre d'information. Une décision déjà enregistrée est remplacée.
+     *
+     * @param int[] $inscriptionIds
+     * @return array{decision:string, enregistrees:int, niveau_arrivee:?array, niveau_depart:string, auditeurs:int[]}
      */
-    public function validerPassages(int $sessionId, string $mode = 'manuelle'): array
+    public function deciderPassages(int $sessionId, array $inscriptionIds, string $decision, ?string $observation = null): array
     {
+        if (!in_array($decision, self::DECISIONS_MANUELLES, true)) {
+            throw new InvalidArgumentException('Choisissez « passe en classe supérieure », « redouble la classe » ou « termine la formation ».');
+        }
+        $inscriptionIds = array_values(array_unique(array_filter(array_map('intval', $inscriptionIds), static fn($id) => $id > 0)));
+        if ($inscriptionIds === []) {
+            throw new InvalidArgumentException('Sélectionnez au moins un auditeur.');
+        }
+        $observation = $observation === null ? null : trim($observation);
+        if ($observation !== null && mb_strlen($observation) > 255) {
+            throw new InvalidArgumentException('L’observation ne peut pas dépasser 255 caractères.');
+        }
+
         $results = $this->getSessionResults($sessionId);
         $session = $results['session'];
-        $counts = ['validees' => 0, 'admis' => 0, 'non_admis' => 0, 'abandonne' => 0, 'en_attente' => 0];
+        $byId = [];
+        foreach ($results['auditeurs'] as $row) {
+            $byId[(int) $row['id_inscription']] = $row;
+        }
+        $unknown = array_diff($inscriptionIds, array_keys($byId));
+        if ($unknown !== []) {
+            throw new InvalidArgumentException('Certaines inscriptions sélectionnées n’appartiennent pas à cette session.');
+        }
+
+        $arrivee = $decision === 'admis' ? ($session['niveau_suivant']['id'] ?? null) : null;
+        if ($decision === 'admis' && $arrivee === null) {
+            throw new InvalidArgumentException('Il n’existe pas de niveau supérieur à « ' . $session['niveau_libelle'] . ' » : choisissez « termine la formation ».');
+        }
+        $note = $observation ?: ($decision === 'termine' ? 'Formation terminée.' : null);
 
         $upsert = $this->db->prepare(
             "INSERT INTO passages_niveaux
                 (id_inscription, niveau_depart, niveau_arrivee, decision, moyenne, appreciation,
                  taux_presence, date_decision, observation, mode_validation)
              VALUES (:id_inscription, :depart, :arrivee, :decision, :moyenne, :appreciation,
-                 :taux, CURDATE(), :observation, :mode)
+                 :taux, CURDATE(), :observation, 'manuelle')
              ON DUPLICATE KEY UPDATE
                 niveau_depart = VALUES(niveau_depart), niveau_arrivee = VALUES(niveau_arrivee),
                 decision = VALUES(decision), moyenne = VALUES(moyenne), appreciation = VALUES(appreciation),
                 taux_presence = VALUES(taux_presence), date_decision = VALUES(date_decision),
-                observation = VALUES(observation), mode_validation = VALUES(mode_validation)"
+                observation = VALUES(observation), mode_validation = 'manuelle'"
         );
         $updateLevel = $this->db->prepare('UPDATE auditeurs SET id_niveau = :niveau WHERE id = :id');
 
@@ -244,46 +279,87 @@ class Resultat extends Model
             $this->db->beginTransaction();
         }
         try {
-            foreach ($results['auditeurs'] as $row) {
-                $decision = ['admis' => 'admis', 'non_admis' => 'non_admis', 'abandonne' => 'abandonne'][$row['resultat']] ?? null;
-                if ($decision === null) {
-                    $counts['en_attente']++;
-                    continue;
-                }
-                if ($mode === 'automatique' && $row['passage'] !== null && $row['passage']['mode_validation'] === 'manuelle') {
-                    continue;
-                }
-
-                $arrivee = $decision === 'admis' ? ($session['niveau_suivant']['id'] ?? null) : null;
+            $auditeurs = [];
+            foreach ($inscriptionIds as $id) {
+                $row = $byId[$id];
                 $upsert->execute([
-                    'id_inscription' => $row['id_inscription'],
+                    'id_inscription' => $id,
                     'depart' => (int) $session['id_niveau'],
                     'arrivee' => $arrivee,
                     'decision' => $decision,
                     'moyenne' => $row['moyenne_generale'],
                     'appreciation' => $row['appreciation_generale']['note'] ?? null,
                     'taux' => $row['presences']['taux'],
-                    'observation' => $decision === 'admis' && $arrivee === null ? 'Niveau final atteint.' : $row['motif'],
-                    'mode' => $mode,
+                    'observation' => $note,
                 ]);
-                $updateLevel->execute([
-                    'niveau' => $arrivee ?? (int) $session['id_niveau'],
-                    'id' => (int) $row['id_auditeur'],
-                ]);
-                $counts['validees']++;
-                $counts[$decision]++;
+                $updateLevel->execute(['niveau' => $arrivee ?? (int) $session['id_niveau'], 'id' => (int) $row['id_auditeur']]);
+                $auditeurs[] = (int) $row['id_auditeur'];
             }
             if ($ownTransaction) {
                 $this->db->commit();
             }
         } catch (Throwable $e) {
-            if ($ownTransaction) {
+            if ($ownTransaction && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }
             throw $e;
         }
 
-        return $counts;
+        return [
+            'decision' => $decision,
+            'enregistrees' => count($inscriptionIds),
+            'niveau_depart' => $session['niveau_libelle'],
+            'niveau_arrivee' => $decision === 'admis' ? ($session['niveau_suivant'] ?? null) : null,
+            'auditeurs' => $auditeurs,
+        ];
+    }
+
+    /**
+     * Annule les décisions de passage d'une sélection d'inscriptions : la décision est supprimée,
+     * l'auditeur retrouve son niveau de départ et ses notes sont de nouveau modifiables.
+     *
+     * @param int[] $inscriptionIds
+     * @return int nombre de décisions annulées
+     */
+    public function annulerPassages(int $sessionId, array $inscriptionIds): int
+    {
+        $inscriptionIds = array_values(array_unique(array_filter(array_map('intval', $inscriptionIds), static fn($id) => $id > 0)));
+        if ($inscriptionIds === []) {
+            throw new InvalidArgumentException('Sélectionnez au moins un auditeur.');
+        }
+        $marks = implode(',', array_fill(0, count($inscriptionIds), '?'));
+        $rows = $this->fetchAll(
+            "SELECT p.id, p.niveau_depart, i.id_auditeur
+             FROM passages_niveaux p JOIN inscriptions i ON i.id = p.id_inscription
+             WHERE i.id_session = ? AND p.id_inscription IN ({$marks})",
+            array_merge([$sessionId], $inscriptionIds)
+        );
+        if ($rows === []) {
+            throw new InvalidArgumentException('Aucune décision à annuler pour la sélection.');
+        }
+
+        $ownTransaction = !$this->db->inTransaction();
+        if ($ownTransaction) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $delete = $this->db->prepare('DELETE FROM passages_niveaux WHERE id = :id');
+            $restore = $this->db->prepare('UPDATE auditeurs SET id_niveau = :niveau WHERE id = :id');
+            foreach ($rows as $row) {
+                $delete->execute(['id' => (int) $row['id']]);
+                $restore->execute(['niveau' => (int) $row['niveau_depart'], 'id' => (int) $row['id_auditeur']]);
+            }
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return count($rows);
     }
 
     /** Parcours complet d'un auditeur : niveau actuel, sessions suivies, résultats et décisions. */

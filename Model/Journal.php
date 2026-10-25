@@ -10,18 +10,23 @@ class Journal extends Model
 {
     protected string $table = 'journal_operations';
 
-    private const SENSITIVE_KEYS = ['password', 'mot_de_passe', 'new_password', 'current_password', 'confirm_password', 'token'];
+    private const SENSITIVE_KEYS = ['password', 'mot_de_passe', 'new_password', 'current_password', 'confirm_password', 'token', 'refresh_token', 'access_token'];
 
     /** Libellé lisible de l'action à partir de la méthode et de la route. */
     public static function actionFor(string $method, string $resource, ?string $param1, ?string $param2): string
     {
         if ($resource === 'auth') {
-            return $param1 === 'login' ? 'connexion' : ($param1 === 'logout' ? 'deconnexion' : 'profil');
+            return match ($param1) {
+                'login' => 'connexion',
+                'logout', 'logout-all' => 'deconnexion',
+                'refresh' => 'renouvellement',
+                default => 'profil',
+            };
         }
         if ($method === 'DELETE') {
             return 'suppression';
         }
-        if (in_array($param1, ['valider', 'decide', 'validate'], true) || $param2 === 'statut') {
+        if (in_array($param1, ['valider', 'annuler', 'decide', 'validate'], true) || $param2 === 'statut') {
             return 'validation';
         }
         return $method === 'POST' && !in_array($param1, ['save-or-update', 'mark', 'mark-bulk'], true) ? 'creation' : 'modification';

@@ -13,7 +13,7 @@ class PassageNiveau extends Model
 {
     protected string $table = 'passages_niveaux';
 
-    public const DECISIONS = ['admis', 'non_admis', 'redouble', 'abandonne'];
+    public const DECISIONS = ['admis', 'non_admis', 'redouble', 'abandonne', 'termine'];
 
     protected array $fillable = [
         'id_inscription', 'niveau_depart', 'niveau_arrivee',

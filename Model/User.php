@@ -76,8 +76,13 @@ class User extends Model
             return null;
         }
         $storedPassword = (string) $user['password'];
-        if (!password_verify($password, $storedPassword) && !hash_equals($storedPassword, $password)) {
-            return null;
+        if (!password_verify($password, $storedPassword)) {
+            if (!hash_equals($storedPassword, $password)) {
+                return null;
+            }
+            // Ancien mot de passe stocké en clair : il est haché dès cette connexion réussie.
+            $this->db->prepare("UPDATE {$this->table} SET password = :hash WHERE id = :id")
+                ->execute(['hash' => password_hash($password, PASSWORD_DEFAULT), 'id' => (int) $user['id']]);
         }
 
         $this->updateLastLogin((int) $user['id']);
@@ -128,7 +133,7 @@ class User extends Model
     public function findWithRole(int $id): ?array
     {
         return $this->fetchOne(
-            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif,
+            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif, u.token_version,
                     u.last_login, u.created_at, u.updated_at, u.role_id,
                     r.code AS role_code, r.nom AS role_nom,
                     (SELECT f.id FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_id,

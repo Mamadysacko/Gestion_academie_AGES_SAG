@@ -1,6 +1,10 @@
 RewriteEngine On
 RewriteBase /Backend_AGES/Route/
 
+# Transmet l'en-tête « Authorization: Bearer <JWT> » à PHP (Apache le retire sinon)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Redirections vers api.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

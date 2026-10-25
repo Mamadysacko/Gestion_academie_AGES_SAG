@@ -54,6 +54,7 @@ class Rapport extends Model
         'pas-admis' => ['passages', 'Auditeurs admis au niveau supérieur', 'passageListe', 'admis', null],
         'pas-non-admis' => ['passages', 'Auditeurs non admis', 'passageListe', 'non_admis', null],
         'pas-redoublement' => ['passages', 'Auditeurs autorisés à redoubler', 'passageListe', 'redouble', null],
+        'pas-termine' => ['passages', 'Auditeurs ayant terminé la formation', 'passageListe', 'termine', null],
         'pas-decisions-session' => ['passages', 'Décisions de passage par session', 'passageDecisions', 'session', null],
         'pas-decisions-annee' => ['passages', 'Passages de niveau par année scolaire', 'passageDecisions', 'annee', null],
         'pas-progression' => ['passages', 'Progression des auditeurs entre les niveaux', 'passageProgression', null, null],
@@ -269,7 +270,7 @@ class Rapport extends Model
              JOIN annees_scolaires an ON an.id = i.id_annee
              JOIN salles sa ON sa.id = e.id_salle
              JOIN formateurs f ON f.id = e.id_formateur
-             LEFT JOIN types_employes te ON te.id = a.id_type_employe";
+             LEFT JOIN types_employes te ON te.id = a.id_type_employe LEFT JOIN positions po ON po.id = a.id_position";
 
     private function insFrom(): string
     {
@@ -447,7 +448,7 @@ class Rapport extends Model
         $where = $this->insWhere($f, $params);
         $rows = $this->fetchAll(
             "SELECT n.libelle AS niveau, s.code AS session, g.code AS groupe, sa.code AS salle,
-                    a.matricule, CONCAT(a.nom, ' ', a.prenom) AS nom, a.sexe, a.telephone, a.position,
+                    a.matricule, CONCAT(a.nom, ' ', a.prenom) AS nom, a.sexe, a.telephone, po.libelle AS position,
                     d.libelle AS departement, COALESCE(te.libelle, 'Non renseigné') AS type_employeur, i.statut
              {$this->insFrom()} WHERE 1 = 1 {$where} ORDER BY {$order}, a.nom, a.prenom",
             $params
@@ -573,7 +574,8 @@ class Rapport extends Model
             $counts[$s === null ? 'non' : ($s === 'present' ? 'present' : ($s === 'absent' ? 'absent' : 'autres'))]++;
             $lines[] = ['salle' => $r['salle_code'], 'groupe' => $r['groupe_code'], 'session' => $r['session_code'],
                 'formateur' => $r['formateur_prenom'] . ' ' . $r['formateur_nom'], 'matricule' => $r['auditeur_matricule'],
-                'nom' => $r['auditeur_nom'] . ' ' . $r['auditeur_prenom'], 'statut' => $s === null ? 'Non pointé' : $labels[$s], 'observation' => $r['observation']];
+                'nom' => $r['auditeur_nom'] . ' ' . $r['auditeur_prenom'], 'statut' => $s === null ? 'Non pointé' : $labels[$s],
+                'observation' => Presence::observationLabel($s, $r['conge_date_debut'] ?? null, $r['conge_date_fin'] ?? null, $r['observation'])];
         }
         $attendus = count($lines);
         return [
@@ -934,13 +936,13 @@ class Rapport extends Model
      | 4. Passage de niveau
      |------------------------------------------------------------------ */
 
-    /** Décision retenue : celle validée en base, sinon le résultat calculé. */
+    /** Décision retenue : celle approuvée par un utilisateur habilité ; aucune décision n'est déduite des moyennes. */
     private function decisionOf(array $r): array
     {
         if ($r['passage'] !== null) {
             return [$r['passage']['decision'], true];
         }
-        return [$r['resultat'], false];
+        return ['en_attente', false];
     }
 
     private function passageListe(array $f, ?array $p, string $decision): array
@@ -954,15 +956,15 @@ class Rapport extends Model
                     continue;
                 }
                 $arrival = $r['passage']['niveau_arrivee_libelle'] ?? ($decision === 'admis' ? ($s['session']['niveau_suivant']['libelle'] ?? 'Fin de cursus') : null);
-                $lines[] = ['session' => $s['session']['code'], 'niveau' => $s['session']['niveau_libelle'], 'arrivee' => $decision === 'admis' ? $arrival : 'Reste en ' . $s['session']['niveau_libelle'],
+                $lines[] = ['session' => $s['session']['code'], 'niveau' => $s['session']['niveau_libelle'], 'arrivee' => $decision === 'admis' ? $arrival : ($decision === 'termine' ? 'Formation terminée' : 'Reste en ' . $s['session']['niveau_libelle']),
                     'groupe' => $r['groupe_code'], 'matricule' => $r['auditeur_matricule'], 'nom' => $r['auditeur_nom'] . ' ' . $r['auditeur_prenom'],
                     'moyenne' => $r['moyenne_generale'], 'appreciation' => $this->appr($r['appreciation_generale']), 'presence' => $r['presences']['taux'],
-                    'statut' => $validated ? 'Validée' : 'Calculée (non validée)', 'date' => $r['passage']['date_decision'] ?? null, 'motif' => $r['motif']];
+                    'statut' => $validated ? 'Approuvée' : 'En attente', 'date' => $r['passage']['date_decision'] ?? null, 'motif' => $r['passage']['observation'] ?? null];
             }
         }
-        $titles = ['admis' => 'Auditeurs admis', 'non_admis' => 'Auditeurs non admis', 'redouble' => 'Auditeurs autorisés à redoubler'];
+        $titles = ['admis' => 'Auditeurs passés en classe supérieure', 'non_admis' => 'Auditeurs non admis', 'redouble' => 'Auditeurs qui redoublent', 'termine' => 'Auditeurs ayant terminé la formation'];
         return [
-            'resume' => [['label' => $titles[$decision], 'value' => count($lines)], ['label' => 'Décisions validées', 'value' => count(array_filter($lines, static fn($l) => $l['statut'] === 'Validée'))]],
+            'resume' => [['label' => $titles[$decision], 'value' => count($lines)], ['label' => 'Décisions validées', 'value' => count(array_filter($lines, static fn($l) => $l['statut'] === 'Approuvée'))]],
             'sections' => [$this->sec($titles[$decision], [$this->c('session', 'Session'), $this->c('niveau', 'Niveau de départ'), $this->c('arrivee', 'Niveau d’arrivée'), $this->c('groupe', 'Groupe'),
                 $this->c('matricule', 'Matricule'), $this->c('nom', 'Auditeur'), $this->c('moyenne', 'Moyenne /4', 'dec'), $this->c('appreciation', 'Appréciation'), $this->c('presence', 'Présence', 'pct'),
                 $this->c('statut', 'Décision'), $this->c('date', 'Date', 'date'), $this->c('motif', 'Motif')], $lines)],
@@ -971,7 +973,7 @@ class Rapport extends Model
 
     private function decisionCounts(array $rows): array
     {
-        $c = ['admis' => 0, 'non_admis' => 0, 'redouble' => 0, 'abandonne' => 0, 'en_attente' => 0, 'validees' => 0];
+        $c = ['admis' => 0, 'non_admis' => 0, 'redouble' => 0, 'abandonne' => 0, 'termine' => 0, 'en_attente' => 0, 'validees' => 0];
         foreach ($rows as $r) {
             [$d, $v] = $this->decisionOf($r);
             $c[$d] = ($c[$d] ?? 0) + 1;
@@ -993,12 +995,12 @@ class Rapport extends Model
         $lines = [];
         foreach ($groups as $label => $rows) {
             $c = $this->decisionCounts($rows);
-            $lines[] = ['libelle' => $label, 'effectif' => count($rows), 'admis' => $c['admis'], 'non_admis' => $c['non_admis'], 'redouble' => $c['redouble'], 'abandonne' => $c['abandonne'],
-                'en_attente' => $c['en_attente'], 'validees' => $c['validees'], 'taux' => $this->pct($c['admis'], $c['admis'] + $c['non_admis'] + $c['redouble'])];
+            $lines[] = ['libelle' => $label, 'effectif' => count($rows), 'admis' => $c['admis'], 'non_admis' => $c['non_admis'], 'redouble' => $c['redouble'], 'termine' => $c['termine'], 'abandonne' => $c['abandonne'],
+                'en_attente' => $c['en_attente'], 'validees' => $c['validees'], 'taux' => $this->pct($c['admis'] + $c['termine'], $c['admis'] + $c['termine'] + $c['non_admis'] + $c['redouble'])];
         }
         return ['resume' => $this->resumeResultats($data), 'sections' => [$this->sec('Décisions par ' . ($dimension === 'session' ? 'session' : 'année scolaire'), [
             $this->c('libelle', $dimension === 'session' ? 'Session' : 'Année scolaire'), $this->c('effectif', 'Effectif', 'int'), $this->c('admis', 'Admis', 'int'), $this->c('non_admis', 'Non admis', 'int'),
-            $this->c('redouble', 'Redoublements', 'int'), $this->c('abandonne', 'Abandons', 'int'), $this->c('en_attente', 'En attente', 'int'), $this->c('validees', 'Décisions validées', 'int'), $this->c('taux', 'Taux d’admission', 'pct'),
+            $this->c('redouble', 'Redoublements', 'int'), $this->c('termine', 'Formations terminées', 'int'), $this->c('abandonne', 'Abandons', 'int'), $this->c('en_attente', 'En attente', 'int'), $this->c('validees', 'Décisions validées', 'int'), $this->c('taux', 'Taux d’admission', 'pct'),
         ], $lines)]];
     }
 
@@ -1020,7 +1022,7 @@ class Rapport extends Model
              ORDER BY a.nom, a.prenom, pn.date_decision",
             $params
         );
-        $labels = ['admis' => 'Admis', 'non_admis' => 'Non admis', 'redouble' => 'Redoublement', 'abandonne' => 'Abandon'];
+        $labels = ['admis' => 'Admis', 'non_admis' => 'Non admis', 'redouble' => 'Redoublement', 'abandonne' => 'Abandon', 'termine' => 'Formation terminée'];
         $lines = array_map(static fn($r) => ['matricule' => $r['matricule'], 'nom' => $r['nom'], 'niveau_actuel' => $r['niveau_actuel'] ?? '—', 'annee' => $r['annee'], 'session' => $r['session'],
             'depart' => $r['depart'], 'arrivee' => $r['arrivee'] ?: '—', 'decision' => $labels[$r['decision']], 'moyenne' => $r['moyenne'] === null ? null : (float) $r['moyenne'],
             'appreciation' => $r['appreciation'] === null ? '—' : $r['appreciation'] . '/4', 'date' => $r['date'], 'mode' => $r['mode']], $rows);

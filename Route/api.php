@@ -16,6 +16,7 @@
  *    routes/emplois.php       → Emplois du temps
  *    routes/evaluations.php   → Évaluations, Notes, Passages de niveau
  *    routes/presences.php     → Présences
+ *    routes/planification.php → Formations (configuration) & planification automatique
  * ================================================================
  */
 
@@ -50,8 +51,8 @@ try {
     // Cache serveur des agrégats coûteux (tableau de bord : une cinquantaine de requêtes SQL).
     // Il est invalidé par toute écriture passant par cette API et expire de toute façon vite.
     $cacheKey = null;
-    if ($method === 'GET' && in_array($resource, ['tableau-de-bord', 'rappels'], true) && !empty($_SESSION['user_id'])) {
-        $cacheKey = ResponseCache::key((int) $_SESSION['user_id'], (string) ($_SERVER['REQUEST_URI'] ?? ''));
+    if ($method === 'GET' && in_array($resource, ['tableau-de-bord', 'rappels'], true) && Authorization::userId() !== null) {
+        $cacheKey = ResponseCache::key((int) Authorization::userId(), (string) ($_SERVER['REQUEST_URI'] ?? ''));
         if (($cached = ResponseCache::read($cacheKey)) !== null) {
             echo $cached;
             exit;
@@ -67,6 +68,7 @@ try {
         __DIR__ . '/routes/auditeurs.php',
         __DIR__ . '/routes/ressources.php',
         __DIR__ . '/routes/emplois.php',
+        __DIR__ . '/routes/planification.php',
         __DIR__ . '/routes/evaluations.php',
         __DIR__ . '/routes/presences.php',
         __DIR__ . '/routes/dashboard.php',

@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../Model/Session.php';
 require_once __DIR__ . '/../Model/Resultat.php';
+require_once __DIR__ . '/../Model/Planification.php';
 
 class SessionController
 {
@@ -164,13 +165,45 @@ class SessionController
                 return;
             }
 
-            $id = $this->model->create($data);
+            // Réutilisation de la configuration : activée par défaut, désactivable explicitement.
+            $reuse = !array_key_exists('reprendre_configuration', $data) || filter_var($data['reprendre_configuration'], FILTER_VALIDATE_BOOLEAN);
+            $generate = !array_key_exists('generer_planning', $data) || filter_var($data['generer_planning'], FILTER_VALIDATE_BOOLEAN);
+            $sourceId = !empty($data['id_session_source']) ? (int) $data['id_session_source'] : null;
+            unset($data['id_session_source'], $data['config_formation'], $data['config_version'], $data['passages_semaine']);
 
+            $planning = new Planification();
+            $db = Database::getInstance();
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
+            }
+            try {
+                $id = $this->model->create($data);
+                // La session fige la configuration actuelle de sa formation : la modifier plus tard
+                // ne changera pas cette session.
+                $config = $planning->snapshotSession($id);
+                $reprise = $reuse ? $planning->reprendre($id, $sourceId, $generate, Authorization::userId()) : null;
+                if ($ownTx) {
+                    $db->commit();
+                }
+            } catch (Throwable $error) {
+                if ($ownTx && $db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
+            }
+
+            $message = 'Session créée avec succès.';
+            if ($reprise !== null) {
+                $message .= ' ' . (new PlanificationController())->repriseMessage($reprise);
+            }
             $this->sendResponse(201, [
                 'success' => true,
-                'message' => 'Session créée avec succès.',
-                'data' => ['id' => $id]
+                'message' => $message,
+                'data' => ['id' => $id, 'configuration' => $config, 'reprise' => $reprise]
             ]);
+        } catch (DomainException $e) {
+            $this->sendError(409, $e->getMessage());
         } catch (Exception $e) {
             // Erreur de contrainte unique
             if (strpos($e->getMessage(), 'uk_sessions_code') !== false) {
@@ -212,12 +245,20 @@ class SessionController
                 return;
             }
 
+            // La configuration figée de la session ne se modifie que par « adopter la configuration ».
+            unset($data['config_formation'], $data['config_version'], $data['passages_semaine'], $data['id_session_source']);
             $success = $this->model->update($id, $data);
 
             if ($success) {
+                // Nouvelles dates : signaler immédiatement les créneaux qui chevauchent désormais d'autres sessions.
+                $conflicts = array_values(array_filter(
+                    (new Planification())->conflicts(null, $id),
+                    static fn($c) => $c['gravite'] === 'erreur'
+                ));
                 $this->sendResponse(200, [
                     'success' => true,
-                    'message' => 'Session mise à jour avec succès.' . $this->autoPassageMessage($id, $data['statut'] ?? null)
+                    'message' => 'Session mise à jour avec succès.' . ($conflicts ? ' Attention : ' . count($conflicts) . ' conflit(s) de planning détecté(s) avec les nouvelles dates.' : ''),
+                    'data' => ['conflits' => $conflicts]
                 ]);
             } else {
                 $this->sendError(400, "Aucune donnée valide à mettre à jour.");
@@ -232,23 +273,6 @@ class SessionController
                 $this->sendError(500, "Erreur lors de la mise à jour de la session : " . $e->getMessage());
             }
         }
-    }
-
-    /**
-     * À la clôture d'une session (statut « terminee »), enregistre automatiquement les
-     * passages de niveau calculables si la règle « passage automatique » est active.
-     */
-    private function autoPassageMessage(int $id, ?string $statut): string
-    {
-        $niveau = (int) ((new Session())->find($id)['id_niveau'] ?? 0) ?: null;
-        if ($statut !== 'terminee' || !(new ReglesEvaluation())->getRegles($niveau)['passage_automatique']) {
-            return '';
-        }
-        $counts = (new Resultat())->validerPassages($id, 'automatique');
-        return sprintf(
-            ' Passages automatiques : %d admis, %d non admis, %d en attente.',
-            $counts['admis'], $counts['non_admis'], $counts['en_attente']
-        );
     }
 
     /**
@@ -317,7 +341,7 @@ class SessionController
             if ($success) {
                 $this->sendResponse(200, [
                     'success' => true,
-                    'message' => 'Statut de la session modifié avec succès.' . $this->autoPassageMessage($id, $data['statut']),
+                    'message' => 'Statut de la session modifié avec succès.',
                     'data' => ['statut' => $data['statut']]
                 ]);
             } else {

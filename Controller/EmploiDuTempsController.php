@@ -5,6 +5,7 @@
 
 require_once __DIR__ . '/../Model/EmploiDuTemps.php';
 require_once __DIR__ . '/../Model/Formateur.php';
+require_once __DIR__ . '/../Model/Planification.php';
 
 class EmploiDuTempsController
 {
@@ -157,24 +158,40 @@ class EmploiDuTempsController
                 return;
             }
 
-            if (!$this->model->isSalleLibre($data['id_annee'], $data['id_salle'], $data['jour_semaine'])) {
-                $this->sendError(409, "Cette salle est déjà occupée ce jour-là.");
-                return;
+            $planning = new Planification();
+            $db = Database::getInstance();
+            $planning->acquireLock();
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
             }
-
-            if (!$this->model->isFormateurLibre($data['id_annee'], $data['id_formateur'], $data['jour_semaine'])) {
-                $this->sendError(409, "Ce formateur est déjà occupé ce jour-là.");
-                return;
+            try {
+                $newPassage = $this->placeSlot($planning, $data, null);
+                $data['origine'] = 'manuelle';
+                $id = $this->model->create($data);
+                if ($newPassage) {
+                    $planning->ensurePassage($data['id_groupe'], $data['jour_semaine'], $data['heure_debut'], $data['heure_fin']);
+                }
+                (new Formateur())->validateSalleAssignment($data['id_formateur'], $data['id_salle'], true);
+                if ($ownTx) {
+                    $db->commit();
+                }
+            } catch (Throwable $error) {
+                if ($ownTx && $db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
+            } finally {
+                $planning->releaseLock();
             }
-
-            $id = $this->model->create($data);
-            (new Formateur())->validateSalleAssignment($data['id_formateur'], $data['id_salle'], true);
 
             $this->sendResponse(201, [
                 'success' => true,
-                'message' => 'Emploi du temps créé avec succès.',
-                'data' => ['id' => $id]
+                'message' => 'Emploi du temps créé avec succès.' . ($newPassage ? ' Ce jour a été ajouté aux passages hebdomadaires du groupe.' : ''),
+                'data' => ['id' => $id, 'heure_debut' => substr($data['heure_debut'], 0, 5), 'heure_fin' => substr($data['heure_fin'], 0, 5), 'nouveau_passage' => $newPassage]
             ]);
+        } catch (PlanningException $e) {
+            $this->sendResponse(409, ['success' => false, 'error' => $e->getMessage(), 'details' => $e->details]);
         } catch (PDOException $e) {
             if ((string) $e->getCode() === '23000') {
                 $this->sendError(409, "Ce créneau entre en conflit avec une autre réservation de salle, de formateur ou de groupe.");
@@ -228,27 +245,50 @@ class EmploiDuTempsController
                 $this->sendError(400, $validation);
                 return;
             }
-            if ((int) $assignment['statut'] === 1) {
-                if (!$this->model->isSalleLibre($assignment['id_annee'], $assignment['id_salle'], $assignment['jour_semaine'], $id)) {
-                    $this->sendError(409, "Cette salle est déjà occupée ce jour-là.");
-                    return;
+            $planning = new Planification();
+            $db = Database::getInstance();
+            $planning->acquireLock();
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
+            }
+            try {
+                $newPassage = $this->placeSlot($planning, $assignment, $id);
+                $success = $this->model->update($id, $assignment);
+                if ($newPassage) {
+                    $planning->ensurePassage($assignment['id_groupe'], $assignment['jour_semaine'], $assignment['heure_debut'], $assignment['heure_fin']);
                 }
-                if (!$this->model->isFormateurLibre($assignment['id_annee'], $assignment['id_formateur'], $assignment['jour_semaine'], $id)) {
-                    $this->sendError(409, "Ce formateur est déjà occupé ce jour-là.");
-                    return;
+                // Jour quitté : s'il n'y reste aucun créneau actif du groupe, ce passage disparaît.
+                if ((int) $current['jour_semaine'] !== (int) $assignment['jour_semaine'] || (int) $current['id_groupe'] !== (int) $assignment['id_groupe']) {
+                    $db->prepare(
+                        'DELETE gp FROM groupe_passages gp
+                         WHERE gp.id_groupe = :g AND gp.jour_semaine = :j
+                           AND NOT EXISTS (SELECT 1 FROM emplois_du_temps e WHERE e.id_groupe = gp.id_groupe AND e.jour_semaine = gp.jour_semaine AND e.statut = 1)
+                           AND EXISTS (SELECT 1 FROM emplois_du_temps e2 WHERE e2.id_groupe = gp.id_groupe AND e2.statut = 1)'
+                    )->execute(['g' => (int) $current['id_groupe'], 'j' => (int) $current['jour_semaine']]);
                 }
+                if ($success) {
+                    (new Formateur())->validateSalleAssignment($assignment['id_formateur'], $assignment['id_salle'], true);
+                }
+                if ($ownTx) {
+                    $db->commit();
+                }
+            } catch (Throwable $error) {
+                if ($ownTx && $db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
+            } finally {
+                $planning->releaseLock();
             }
 
-            $success = $this->model->update($id, $assignment);
             if ($success) {
-                (new Formateur())->validateSalleAssignment($assignment['id_formateur'], $assignment['id_salle'], true);
-            }
-
-            if ($success) {
-                $this->sendResponse(200, ['success' => true, 'message' => 'Emploi du temps mis à jour.']);
+                $this->sendResponse(200, ['success' => true, 'message' => 'Emploi du temps mis à jour.' . ($newPassage ? ' Ce jour a été ajouté aux passages hebdomadaires du groupe.' : '')]);
             } else {
                 $this->sendError(400, "Aucune donnée valide.");
             }
+        } catch (PlanningException $e) {
+            $this->sendResponse(409, ['success' => false, 'error' => $e->getMessage(), 'details' => $e->details]);
         } catch (PDOException $e) {
             if ((string) $e->getCode() === '23000') {
                 $this->sendError(409, "Ce créneau entre en conflit avec une autre réservation de salle, de formateur ou de groupe.");
@@ -315,6 +355,37 @@ class EmploiDuTempsController
         } catch (Exception $e) {
             $this->sendError(500, "Erreur : " . $e->getMessage());
         }
+    }
+
+    /**
+     * Complète un créneau manuel (session, horaire du passage) et vérifie disponibilités et règles :
+     * jour de passage du groupe, salle dédiée à une autre formation, salle / formateur / groupe déjà pris
+     * sur un horaire qui chevauche, pendant des dates de session qui se recoupent.
+     * @return bool true si ce jour devient un nouveau passage du groupe
+     * @throws PlanningException avec conflits et alternatives proposées
+     */
+    private function placeSlot(Planification $planning, array &$slot, ?int $excludeId): bool
+    {
+        $stmt = Database::getInstance()->prepare('SELECT id_session FROM groupes WHERE id = :id');
+        $stmt->execute(['id' => (int) $slot['id_groupe']]);
+        $slot['id_session'] = (int) $stmt->fetchColumn();
+
+        $passage = $planning->passageFor((int) $slot['id_groupe'], (int) $slot['jour_semaine']);
+        if (is_string($passage)) {
+            throw new PlanningException($passage, ['alternatives' => $planning->alternatives((int) $slot['id_groupe'], $excludeId)]);
+        }
+        [$slot['heure_debut'], $slot['heure_fin'], $isNew] = $passage;
+
+        if ((int) ($slot['statut'] ?? 1) === 1) {
+            $conflicts = $planning->slotConflicts($slot, $excludeId);
+            if ($conflicts !== []) {
+                throw new PlanningException(
+                    implode(' ', array_map(static fn($c) => $c['message'], $conflicts)),
+                    ['conflits' => $conflicts, 'alternatives' => $planning->alternatives((int) $slot['id_groupe'], $excludeId, (int) $slot['jour_semaine'], (int) $slot['id_salle'])]
+                );
+            }
+        }
+        return $isNew;
     }
 
     /** Un formateur ne voit que ses propres créneaux (salles, groupes, auditeurs de ses affectations). */

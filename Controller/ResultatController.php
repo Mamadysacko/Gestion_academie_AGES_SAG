@@ -4,7 +4,8 @@
  *
  * GET  /resultats/session/{id}?id_groupe=&id_salle=  → moyennes, appréciations, statuts, synthèse
  * GET  /resultats/auditeur/{id}                       → parcours (niveaux, sessions, résultats)
- * POST /resultats/valider/{id_session}                → enregistre les passages calculables
+ * POST /resultats/valider/{id_session}                → { inscriptions, decision: admis|redouble|termine } (approbation manuelle)
+ * POST /resultats/annuler/{id_session}                → { inscriptions } annule les décisions
  * GET  /regles-evaluation                             → règles + barème d'appréciation
  * PUT  /regles-evaluation                             → { regles?: {...}, bareme?: [...] }
  */
@@ -52,19 +53,45 @@ class ResultatController
     public function valider(int $sessionId): void
     {
         try {
-            $counts = $this->model->validerPassages($sessionId, 'manuelle');
+            $data = $this->getJsonInput();
+            $result = $this->model->deciderPassages(
+                $sessionId,
+                is_array($data['inscriptions'] ?? null) ? $data['inscriptions'] : [],
+                (string) ($data['decision'] ?? ''),
+                isset($data['observation']) ? (string) $data['observation'] : null
+            );
+            $label = match ($result['decision']) {
+                'admis' => 'passent en classe supérieure (' . ($result['niveau_arrivee']['libelle'] ?? '') . ')',
+                'termine' => 'terminent la formation',
+                default => 'redoublent la classe (' . $result['niveau_depart'] . ')',
+            };
             $this->sendResponse(200, [
                 'success' => true,
-                'message' => sprintf(
-                    '%d décision(s) enregistrée(s) : %d admis, %d non admis, %d abandon(s). %d résultat(s) restent en attente.',
-                    $counts['validees'], $counts['admis'], $counts['non_admis'], $counts['abandonne'], $counts['en_attente']
-                ),
-                'data' => $counts,
+                'message' => sprintf('%d auditeur(s) %s.', $result['enregistrees'], $label),
+                'data' => $result,
             ]);
         } catch (InvalidArgumentException $e) {
-            $this->sendError(404, $e->getMessage());
+            $this->sendError(400, $e->getMessage());
         } catch (Exception $e) {
-            $this->sendError(500, 'Erreur lors de la validation des passages : ' . $e->getMessage());
+            $this->sendError(500, 'Erreur lors de l’enregistrement des passages : ' . $e->getMessage());
+        }
+    }
+
+    /** POST /resultats/annuler/{id_session} — { inscriptions: [ids] } : annule les décisions. */
+    public function annuler(int $sessionId): void
+    {
+        try {
+            $data = $this->getJsonInput();
+            $count = $this->model->annulerPassages($sessionId, is_array($data['inscriptions'] ?? null) ? $data['inscriptions'] : []);
+            $this->sendResponse(200, [
+                'success' => true,
+                'message' => sprintf('%d décision(s) annulée(s) : les auditeurs retrouvent leur niveau de départ.', $count),
+                'data' => ['annulees' => $count],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            $this->sendError(400, $e->getMessage());
+        } catch (Exception $e) {
+            $this->sendError(500, 'Erreur lors de l’annulation des passages : ' . $e->getMessage());
         }
     }
 

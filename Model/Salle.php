@@ -32,6 +32,31 @@ class Salle extends Model
         );
     }
 
+    /**
+     * Supprime une salle et ses rattachements aux formations (salles dédiées / partagées).
+     * Si des créneaux l'utilisent encore, la base refuse et rien n'est supprimé.
+     */
+    public function delete(int $id): bool
+    {
+        $ownTx = !$this->db->inTransaction();
+        if ($ownTx) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $this->db->prepare('DELETE FROM formation_salles WHERE id_salle = :id')->execute(['id' => $id]);
+            $deleted = parent::delete($id);
+            if ($ownTx) {
+                $this->db->commit();
+            }
+            return $deleted;
+        } catch (Throwable $e) {
+            if ($ownTx && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     public function isUsedInPlanning(int $id): bool
     {
         return (int) $this->fetchColumn(

@@ -59,72 +59,27 @@ class PassageNiveauController
 
     public function create(): void
     {
-        $this->sendError(405, "Utilisez la route /passages-niveaux/decide afin de recalculer et valider la moyenne côté serveur.");
+        $this->sendError(405, "Utilisez l’écran « Passage de niveau » pour approuver un passage.");
     }
 
     public function update(int $id): void
     {
-        $this->sendError(405, "Utilisez la route /passages-niveaux/decide afin de recalculer et valider la moyenne côté serveur.");
+        $this->sendError(405, "Utilisez l’écran « Passage de niveau » pour approuver un passage.");
     }
 
     public function delete(int $id): void
     {
-        try {
-            $success = $this->model->delete($id);
-            if ($success) {
-                $this->sendResponse(200, ['success' => true, 'message' => 'Passage supprimé.']);
-            } else {
-                $this->sendError(404, "Passage introuvable.");
-            }
-        } catch (Exception $e) {
-            $this->sendError(500, "Erreur : " . $e->getMessage());
-        }
+        $this->sendError(405, $this->manualMessage());
     }
 
     public function decide(): void
     {
-        try {
-            $data = $this->getJsonInput();
+        $this->sendError(405, $this->manualMessage());
+    }
 
-            $required = ['id_inscription', 'id_evaluation', 'decision'];
-            foreach ($required as $field) {
-                if (empty($data[$field])) {
-                    $this->sendError(400, "Le champ '{$field}' est requis.");
-                    return;
-                }
-            }
-
-            if (!in_array($data['decision'], PassageNiveau::DECISIONS)) {
-                $this->sendError(400, "Décision invalide. Valeurs : " . implode(', ', PassageNiveau::DECISIONS));
-                return;
-            }
-
-            $niveau_arrivee = isset($data['niveau_arrivee']) && $data['niveau_arrivee'] !== '' ? (int)$data['niveau_arrivee'] : null;
-            $observation = $data['observation'] ?? null;
-
-            $success = $this->model->decide(
-                (int)$data['id_inscription'],
-                (int)$data['id_evaluation'],
-                $data['decision'],
-                $niveau_arrivee,
-                $observation
-            );
-
-            if ($success) {
-                $this->sendResponse(200, [
-                    'success' => true,
-                    'message' => 'Décision de passage enregistrée avec succès.'
-                ]);
-            } else {
-                $this->sendError(400, "Impossible d'enregistrer la décision.");
-            }
-        } catch (InvalidArgumentException $e) {
-            $this->sendError(400, $e->getMessage());
-        } catch (RuntimeException $e) {
-            $this->sendError(404, $e->getMessage());
-        } catch (Exception $e) {
-            $this->sendError(500, "Erreur : " . $e->getMessage());
-        }
+    private function manualMessage(): string
+    {
+        return "Les passages de niveau s'approuvent depuis « Évaluations & notes > Passage de niveau » (sélection d'auditeurs, puis « Passe au niveau supérieur » ou « Redouble la classe »).";
     }
 
     private function getJsonInput(): array

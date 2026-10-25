@@ -3,7 +3,9 @@
  * Routes d'Authentification
  *
  * POST /auth/login   → Authentification (email/password)
- * POST /auth/logout  → Déconnexion
+ * POST /auth/refresh    → Nouveau jeton d'accès (rotation du jeton de renouvellement)
+ * POST /auth/logout     → Déconnexion (révoque le jeton de renouvellement)
+ * POST /auth/logout-all → Révoque tous les jetons du compte
  */
 
 if ($resource !== 'auth') return false;
@@ -33,10 +35,14 @@ if ($method === 'GET' && $param1 === 'me') {
     $profileController->saveTrainerGrade();
 } elseif ($method === 'POST') {
     if ($param1 === 'login') {
-        // POST /auth/login
+        // POST /auth/login → utilisateur + access_token (JWT) + refresh_token
         $controller->authenticate();
+    } elseif ($param1 === 'refresh') {
+        (new AuthController())->refresh();
     } elseif ($param1 === 'logout') {
-        $controller->logout();
+        (new AuthController())->logout();
+    } elseif ($param1 === 'logout-all') {
+        (new AuthController())->logoutAll();
     } else {
         throw new Exception("Route d'authentification inconnue.", 404);
     }

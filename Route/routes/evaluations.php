@@ -18,6 +18,8 @@ if ($resource === 'resultats') {
         $controller->getAuditeur((int)$param2);
     } elseif ($method === 'POST' && $param1 === 'valider' && is_numeric($param2)) {
         $controller->valider((int)$param2);
+    } elseif ($method === 'POST' && $param1 === 'annuler' && is_numeric($param2)) {
+        $controller->annuler((int)$param2);
     } else {
         throw new Exception("Route non trouvée.", 404);
     }

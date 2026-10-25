@@ -277,17 +277,20 @@ class AuditeurController
      |---------------------------------------------------------------- */
 
     /**
-     * Normalise la position et le type d'employé (champs facultatifs).
+     * Normalise la position (poste) et le type d'employé (champs facultatifs).
      * @return string|null Message d'erreur ou null si valide.
      */
     private function normalizeEmployment(array &$data): ?string
     {
-        if (array_key_exists('position', $data)) {
-            $data['position'] = trim((string) $data['position']);
-            if ($data['position'] === '') {
-                $data['position'] = null;
-            } elseif (mb_strlen($data['position']) > 100) {
-                return 'La position ne peut pas dépasser 100 caractères.';
+        if (array_key_exists('id_position', $data)) {
+            if ($data['id_position'] === '' || $data['id_position'] === null) {
+                $data['id_position'] = null;
+            } elseif (!filter_var($data['id_position'], FILTER_VALIDATE_INT)
+                || !$this->model->positionExists((int) $data['id_position'])
+            ) {
+                return "La position sélectionnée n'existe pas.";
+            } else {
+                $data['id_position'] = (int) $data['id_position'];
             }
         }
 

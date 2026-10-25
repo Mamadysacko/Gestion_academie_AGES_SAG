@@ -69,7 +69,7 @@ final class TrainerPortal extends Model
         if ($canReadAttendance) {
             $attendance = $this->fetchAll(
                 "SELECT p.id, p.id_inscription, p.id_emploi_du_temps, e.id_annee, p.date_presence,
-                        p.statut, p.observation,
+                        p.statut, p.observation, p.conge_date_debut, p.conge_date_fin,
                         a.nom AS auditeur_nom, a.prenom AS auditeur_prenom,
                         g.libelle AS groupe_libelle
                  FROM presences p
@@ -84,7 +84,7 @@ final class TrainerPortal extends Model
         } elseif ($canWriteAttendance && $attendanceDate !== null) {
             $attendance = $this->fetchAll(
                 "SELECT p.id, p.id_inscription, p.id_emploi_du_temps, e.id_annee, p.date_presence,
-                        p.statut, p.observation
+                        p.statut, p.observation, p.conge_date_debut, p.conge_date_fin
                  FROM presences p
                  JOIN inscriptions i ON i.id = p.id_inscription
                  JOIN emplois_du_temps e ON e.id = p.id_emploi_du_temps

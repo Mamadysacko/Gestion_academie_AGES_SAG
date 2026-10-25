@@ -13,16 +13,17 @@ class Auditeur extends Model
 
     protected array $fillable = [
         'matricule', 'nom', 'prenom', 'sexe', 'telephone', 'email',
-        'position', 'id_type_employe', 'id_niveau',
+        'id_position', 'id_type_employe', 'id_niveau',
     ];
 
     /** Liste des auditeurs avec le libellé de leur type d'employé. */
     public function getAllWithType(): array
     {
         return $this->fetchAll(
-            "SELECT a.*, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
+            "SELECT a.*, po.libelle AS position, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
              FROM {$this->table} a
              LEFT JOIN types_employes t ON t.id = a.id_type_employe
+             LEFT JOIN positions po ON po.id = a.id_position
              LEFT JOIN niveaux nv ON nv.id = a.id_niveau
              ORDER BY a.nom, a.prenom"
         );
@@ -32,9 +33,10 @@ class Auditeur extends Model
     public function findWithType(int $id): ?array
     {
         return $this->fetchOne(
-            "SELECT a.*, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
+            "SELECT a.*, po.libelle AS position, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
              FROM {$this->table} a
              LEFT JOIN types_employes t ON t.id = a.id_type_employe
+             LEFT JOIN positions po ON po.id = a.id_position
              LEFT JOIN niveaux nv ON nv.id = a.id_niveau
              WHERE a.id = :id
              LIMIT 1",
@@ -94,6 +96,12 @@ class Auditeur extends Model
         return $this->fetchOne('SELECT 1 AS ok FROM types_employes WHERE id = :id LIMIT 1', ['id' => $id]) !== null;
     }
 
+    /** Vérifie qu'une position (poste) existe. */
+    public function positionExists(int $id): bool
+    {
+        return $this->fetchOne('SELECT 1 AS ok FROM positions WHERE id = :id LIMIT 1', ['id' => $id]) !== null;
+    }
+
     /** Trouve un auditeur par son matricule unique. */
     public function findByMatricule(string $matricule): ?array
     {
@@ -109,9 +117,10 @@ class Auditeur extends Model
     public function search(string $term): array
     {
         return $this->fetchAll(
-            "SELECT a.*, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
+            "SELECT a.*, po.libelle AS position, t.libelle AS type_employe_libelle, nv.libelle AS niveau_libelle
              FROM {$this->table} a
              LEFT JOIN types_employes t ON t.id = a.id_type_employe
+             LEFT JOIN positions po ON po.id = a.id_position
              LEFT JOIN niveaux nv ON nv.id = a.id_niveau
              WHERE a.nom LIKE :name_term
                 OR a.prenom LIKE :first_name_term

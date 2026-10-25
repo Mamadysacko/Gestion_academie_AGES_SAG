@@ -1,0 +1,2685 @@
+openapi: 3.0.3
+
+info:
+  title: API AGES — Gestion Académie
+  version: 1.0.0
+  description: |
+    Documentation interactive de l'API PHP AGES. Les routes sont montées sous
+    `/Backend_AGES/Route`. Connectez-vous avec `POST /auth/login` avant d'essayer
+    les routes protégées : l'API conserve l'authentification dans le cookie de
+    session PHP (`PHPSESSID`). Les écritures et les actions sensibles requièrent
+    les permissions associées au rôle connecté.
+
+servers:
+  - url: http://localhost/Backend_AGES/Route
+    description: Installation locale XAMPP (Apache)
+
+security:
+  - sessionCookie: []
+
+tags:
+  - name: Authentification
+  - name: Profil et espace formateur
+  - name: Utilisateurs et rôles
+  - name: Organisation pédagogique
+  - name: Sessions et groupes
+  - name: Auditeurs et inscriptions
+  - name: Formateurs et salles
+  - name: Emplois du temps
+  - name: Évaluations et notes
+  - name: Présences
+  - name: Tableau de bord et rappels
+  - name: Rapports et journal
+
+paths:
+  /auth/login:
+    post:
+      tags: [Authentification]
+      summary: Ouvrir une session
+      description: Utilisez l'e-mail ou le téléphone du compte. Le cookie PHPSESSID est créé à la connexion.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              email: admin@example.com
+              password: votre_mot_de_passe
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/logout:
+    post:
+      tags: [Authentification]
+      summary: Fermer la session
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/me:
+    get:
+      tags: [Authentification]
+      summary: Obtenir l'utilisateur de la session
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/profile:
+    get:
+      tags: [Profil et espace formateur]
+      summary: Consulter son profil
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Profil et espace formateur]
+      summary: Modifier son profil
+      description: 'Champs autorisés : nom, prenom, email, telephone, current_password et new_password.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              nom: Diallo
+              prenom: Awa
+              email: awa@example.com
+              telephone: '+221770000000'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal:
+    get:
+      tags: [Profil et espace formateur]
+      summary: Tableau de bord du formateur connecté
+      parameters:
+        - $ref: '#/components/parameters/Date'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal/feuille:
+    get:
+      tags: [Profil et espace formateur]
+      summary: Obtenir la feuille de présence du formateur
+      parameters:
+        - $ref: '#/components/parameters/Date'
+        - name: id_session
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: id_groupe
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: id_salle
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal/resultats/{id}:
+    get:
+      tags: [Profil et espace formateur]
+      summary: Résultats d'une session pour le formateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal/presences-bulk:
+    post:
+      tags: [Profil et espace formateur]
+      summary: Saisir plusieurs présences depuis l'espace formateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              date_presence: '2026-10-22'
+              statut: present
+              ids: [1, 2]
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal/presences:
+    post:
+      tags: [Profil et espace formateur]
+      summary: Saisir une présence depuis l'espace formateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_inscription: 1
+              date_presence: '2026-10-22'
+              statut: present
+              id_emploi_du_temps: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auth/trainer-portal/notes:
+    post:
+      tags: [Profil et espace formateur]
+      summary: Saisir une note depuis l'espace formateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_evaluation: 1
+              id_parametre: 1
+              id_inscription: 1
+              note: 15
+              observation: Travail satisfaisant
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /users:
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Lister les utilisateurs
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Utilisateurs et rôles]
+      summary: Créer un utilisateur
+      description: nom, prenom, password et role_id sont requis ; fournir un email ou un telephone. Pour un formateur, matricule est également requis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              nom: Diallo
+              prenom: Awa
+              email: awa@example.com
+              telephone: '+221770000000'
+              password: mot_de_passe
+              role_id: 1
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /users/authenticate:
+    post:
+      tags: [Authentification]
+      summary: Authentification (alias historique)
+      description: Alias de POST /auth/login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              email: admin@example.com
+              password: votre_mot_de_passe
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Obtenir un utilisateur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Utilisateurs et rôles]
+      summary: Modifier un utilisateur
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Utilisateurs et rôles]
+      summary: Supprimer un utilisateur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /users/email/{email}:
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Rechercher un utilisateur par e-mail
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /users/role/{roleId}:
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Lister les utilisateurs d'un rôle
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /users/{id}/toggle-actif:
+    post:
+      tags: [Utilisateurs et rôles]
+      summary: Activer ou désactiver un utilisateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /roles:
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Lister les rôles
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Utilisateurs et rôles]
+      summary: Créer un rôle
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /roles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Obtenir un rôle
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Utilisateurs et rôles]
+      summary: Modifier un rôle
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Utilisateurs et rôles]
+      summary: Supprimer un rôle
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /roles/{id}/permissions:
+    put:
+      tags: [Utilisateurs et rôles]
+      summary: Modifier les permissions d'un rôle
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /roles/code/{code}:
+    get:
+      tags: [Utilisateurs et rôles]
+      summary: Rechercher un rôle par code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /annees-scolaires:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Lister les années scolaires
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Organisation pédagogique]
+      summary: Créer une année scolaire
+      description: 'Champs requis : libelle, date_debut, date_fin.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              libelle: 2026-2027
+              date_debut: '2026-10-01'
+              date_fin: '2027-07-31'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /annees-scolaires/active:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Obtenir l'année scolaire active
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /annees-scolaires/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Organisation pédagogique]
+      summary: Obtenir une année scolaire
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Organisation pédagogique]
+      summary: Modifier une année scolaire
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Organisation pédagogique]
+      summary: Supprimer une année scolaire
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /annees-scolaires/{id}/activate:
+    post:
+      tags: [Organisation pédagogique]
+      summary: Définir l'année scolaire active
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /departements:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Lister les départements
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Organisation pédagogique]
+      summary: Créer un département
+      description: 'Champs requis : code et libelle.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              code: INFO
+              libelle: Informatique
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /departements/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Organisation pédagogique]
+      summary: Obtenir un département
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Organisation pédagogique]
+      summary: Modifier un département
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Organisation pédagogique]
+      summary: Supprimer un département
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /departements/code/{code}:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Rechercher un département par code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /niveaux:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Lister les niveaux
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Organisation pédagogique]
+      summary: Créer un niveau
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /niveaux/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Organisation pédagogique]
+      summary: Obtenir un niveau
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Organisation pédagogique]
+      summary: Modifier un niveau
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Organisation pédagogique]
+      summary: Supprimer un niveau
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /niveaux/libelle/{libelle}:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Rechercher un niveau par libellé
+      parameters:
+        - name: libelle
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formations:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Lister les types de formation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Organisation pédagogique]
+      summary: Créer un type de formation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Organisation pédagogique]
+      summary: Obtenir un type de formation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Organisation pédagogique]
+      summary: Modifier un type de formation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Organisation pédagogique]
+      summary: Supprimer un type de formation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formations/libelle/{libelle}:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Rechercher un type de formation par libellé
+      parameters:
+        - name: libelle
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formation:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Alias historique de /types-formations
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Organisation pédagogique]
+      summary: Créer un type de formation (alias)
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formation/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Organisation pédagogique]
+      summary: Alias historique — obtenir un type de formation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Organisation pédagogique]
+      summary: Alias historique — modifier un type de formation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Organisation pédagogique]
+      summary: Alias historique — supprimer un type de formation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-formation/libelle/{libelle}:
+    get:
+      tags: [Organisation pédagogique]
+      summary: Alias historique — rechercher un type de formation par libellé
+      parameters:
+        - name: libelle
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /types-employes:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les types d'employés
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Auditeurs et inscriptions]
+      summary: Créer un type d'employé
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /types-employes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir un type d'employé
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Auditeurs et inscriptions]
+      summary: Modifier un type d'employé
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Auditeurs et inscriptions]
+      summary: Supprimer un type d'employé
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /positions:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les positions
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Auditeurs et inscriptions]
+      summary: Créer une position
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /positions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir une position
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Auditeurs et inscriptions]
+      summary: Modifier une position
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Auditeurs et inscriptions]
+      summary: Supprimer une position
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /sessions:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les sessions
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Sessions et groupes]
+      summary: Créer une session
+      description: 'Champs requis : id_annee, id_type_formation, id_niveau, code, libelle, date_debut et date_fin.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_annee: 1
+              id_type_formation: 1
+              id_niveau: 1
+              code: SESSION-2026-001
+              libelle: Formation initiale 2026
+              date_debut: '2026-10-01'
+              date_fin: '2027-07-31'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Sessions et groupes]
+      summary: Obtenir une session
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Sessions et groupes]
+      summary: Modifier une session
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Sessions et groupes]
+      summary: Supprimer une session
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/relations:
+    get:
+      tags: [Sessions et groupes]
+      summary: Obtenir une session avec ses relations
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/annee/{id}:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les sessions d'une année scolaire
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/type-formation/{id}:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les sessions d'un type de formation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/niveau/{id}:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les sessions d'un niveau
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /sessions/{id}/statut:
+    post:
+      tags: [Sessions et groupes]
+      summary: Modifier le statut d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les groupes
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Sessions et groupes]
+      summary: Créer un groupe
+      description: 'Champs requis : id_session, code, libelle et jour_semaine (1 = lundi à 5 = vendredi).'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_session: 1
+              code: GRP-A
+              libelle: Groupe A
+              jour_semaine: 1
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Sessions et groupes]
+      summary: Obtenir un groupe
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Sessions et groupes]
+      summary: Modifier un groupe
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Sessions et groupes]
+      summary: Supprimer un groupe
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/{id}/session:
+    get:
+      tags: [Sessions et groupes]
+      summary: Obtenir un groupe avec sa session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/{id}/places-restantes:
+    get:
+      tags: [Sessions et groupes]
+      summary: Consulter les places restantes d'un groupe
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/{id}/salles:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les salles associées à un groupe
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/session/{id}:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les groupes d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /groupes/jour/{jour}:
+    get:
+      tags: [Sessions et groupes]
+      summary: Lister les groupes d'un jour de semaine
+      parameters:
+        - name: jour
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /auditeurs:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les auditeurs
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Auditeurs et inscriptions]
+      summary: Créer un auditeur
+      description: 'Champs requis : matricule, nom et prenom. sexe accepté : M ou F.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              matricule: AUD-2026-001
+              nom: Ndiaye
+              prenom: Mariama
+              sexe: F
+              email: mariama@example.com
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auditeurs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir un auditeur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Auditeurs et inscriptions]
+      summary: Modifier un auditeur
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Auditeurs et inscriptions]
+      summary: Supprimer un auditeur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auditeurs/{id}/dossier:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir le dossier complet d'un auditeur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auditeurs/matricule/{matricule}:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Rechercher un auditeur par matricule
+      parameters:
+        - name: matricule
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /auditeurs/search/{term}:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Rechercher des auditeurs
+      parameters:
+        - name: term
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les inscriptions
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Auditeurs et inscriptions]
+      summary: Créer une inscription
+      description: 'Champs requis : id_auditeur, id_departement, date_inscription et id_groupe ou id_emploi_du_temps.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_auditeur: 1
+              id_departement: 1
+              date_inscription: '2026-10-22'
+              id_groupe: 1
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir une inscription
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Auditeurs et inscriptions]
+      summary: Modifier une inscription
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Auditeurs et inscriptions]
+      summary: Supprimer une inscription
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/{id}/details:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Obtenir une inscription avec ses détails
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/{id}/statut:
+    post:
+      tags: [Auditeurs et inscriptions]
+      summary: Changer le statut d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/auditeur/{id}:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les inscriptions d'un auditeur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/groupe/{id}:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les inscriptions d'un groupe
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /inscriptions/departement/{id}:
+    get:
+      tags: [Auditeurs et inscriptions]
+      summary: Lister les inscriptions d'un département
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /formateurs:
+    get:
+      tags: [Formateurs et salles]
+      summary: Lister les formateurs
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Formateurs et salles]
+      summary: Créer un formateur
+      description: 'Champs requis : matricule, nom, prenom et password.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              matricule: FOR-2026-001
+              nom: Ba
+              prenom: Mamadou
+              password: mot_de_passe
+              email: mamadou@example.com
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/actifs:
+    get:
+      tags: [Formateurs et salles]
+      summary: Lister les formateurs actifs
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Formateurs et salles]
+      summary: Obtenir un formateur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Formateurs et salles]
+      summary: Modifier un formateur
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Formateurs et salles]
+      summary: Supprimer un formateur
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/{id}/toggle-actif:
+    post:
+      tags: [Formateurs et salles]
+      summary: Activer ou désactiver un formateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/matricule/{matricule}:
+    get:
+      tags: [Formateurs et salles]
+      summary: Rechercher un formateur par matricule
+      parameters:
+        - name: matricule
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/email/{email}:
+    get:
+      tags: [Formateurs et salles]
+      summary: Rechercher un formateur par e-mail
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /formateurs/user/{id}:
+    get:
+      tags: [Formateurs et salles]
+      summary: Rechercher le formateur lié à un utilisateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /salles:
+    get:
+      tags: [Formateurs et salles]
+      summary: Lister les salles
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Formateurs et salles]
+      summary: Créer une salle
+      description: 'Champs requis : code et libelle.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              code: A101
+              libelle: Salle A101
+              capacite: 30
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /salles/disponibles:
+    get:
+      tags: [Formateurs et salles]
+      summary: Lister les salles disponibles
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /salles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Formateurs et salles]
+      summary: Obtenir une salle
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Formateurs et salles]
+      summary: Modifier une salle
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Formateurs et salles]
+      summary: Supprimer une salle
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /salles/{id}/statut:
+    post:
+      tags: [Formateurs et salles]
+      summary: Modifier le statut d'une salle
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /salles/code/{code}:
+    get:
+      tags: [Formateurs et salles]
+      summary: Rechercher une salle par code
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /emplois-du-temps:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les emplois du temps
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Emplois du temps]
+      summary: Créer un emploi du temps
+      description: 'Champs requis : id_annee, id_groupe, id_salle et jour_semaine.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_annee: 1
+              id_groupe: 1
+              id_salle: 1
+              jour_semaine: 1
+              heure_debut: '08:00'
+              heure_fin: '10:00'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/planning-complet:
+    get:
+      tags: [Emplois du temps]
+      summary: Obtenir le planning complet enrichi
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Emplois du temps]
+      summary: Obtenir un emploi du temps
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Emplois du temps]
+      summary: Modifier un emploi du temps
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Emplois du temps]
+      summary: Supprimer un emploi du temps
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/groupe/{id}:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les séances d'un groupe
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/salle/{id}:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les séances d'une salle
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/formateur/{id}:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les séances d'un formateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/jour/{jour}:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les séances d'un jour de semaine
+      parameters:
+        - name: jour
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/annee/{id}:
+    get:
+      tags: [Emplois du temps]
+      summary: Lister les séances d'une année scolaire
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /emplois-du-temps/check-disponibilite:
+    post:
+      tags: [Emplois du temps]
+      summary: Vérifier la disponibilité d'une salle ou d'un formateur
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /evaluations:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les évaluations
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer une évaluation
+      description: 'Champs requis : id_session, libelle et date_evaluation (AAAA-MM-JJ). numero est facultatif et attribué automatiquement.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_session: 1
+              libelle: Évaluation 1
+              date_evaluation: '2026-11-15'
+              numero: 1
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /evaluations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir une évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier une évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer une évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /evaluations/session/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les évaluations d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /evaluations/generer/{id}:
+    post:
+      tags: [Évaluations et notes]
+      summary: Générer les évaluations prévues d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les paramètres d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer un paramètre d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir un paramètre d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier un paramètre d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer un paramètre d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres/evaluation/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les paramètres associés à une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Associer des paramètres à une évaluation
+      description: Corps JSON attendu par l'opération d'association.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres/evaluation/{id}/parametre/{parameterId}:
+    delete:
+      tags: [Évaluations et notes]
+      summary: Dissocier un paramètre d'une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: parameterId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluations:
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — lister les paramètres d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Alias historique — créer un paramètre d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — obtenir un paramètre d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Alias historique — modifier un paramètre d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Alias historique — supprimer un paramètre d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluations/evaluation/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — paramètres d'une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluation:
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — lister les paramètres d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Alias historique — créer un paramètre d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluation/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — obtenir un paramètre d'évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Alias historique — modifier un paramètre d'évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Alias historique — supprimer un paramètre d'évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /parametres-evaluation/evaluation/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Alias historique — paramètres d'une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les notes
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer une note
+      description: 'Champs requis : id_parametre et id_inscription.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_parametre: 1
+              id_inscription: 1
+              note: 15
+              observation: Travail satisfaisant
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir une note
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier une note
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer une note
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/save-or-update:
+    post:
+      tags: [Évaluations et notes]
+      summary: Enregistrer ou mettre à jour une note
+      description: 'Champs requis : id_evaluation, id_parametre et id_inscription.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_evaluation: 1
+              id_parametre: 1
+              id_inscription: 1
+              note: 15
+              observation: Travail satisfaisant
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/inscription/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les notes d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/parametre/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les notes d'un paramètre
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/evaluation/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les notes d'une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/evaluation/{id}/parametre/{parameterId}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les notes d'un critère pour une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: parameterId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/moyenne/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Calculer la moyenne d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /notes/moyenne/{id}/{evaluationId}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Calculer la moyenne d'une inscription pour une évaluation
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: evaluationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /resultats/session/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir les résultats d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /resultats/auditeur/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir les résultats d'un auditeur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /resultats/valider/{id}:
+    post:
+      tags: [Évaluations et notes]
+      summary: Valider les résultats d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /resultats/annuler/{id}:
+    post:
+      tags: [Évaluations et notes]
+      summary: Annuler la validation des résultats d'une session
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /regles-evaluation:
+    get:
+      tags: [Évaluations et notes]
+      summary: Consulter les règles d'évaluation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier les règles d'évaluation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /regles-passage:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les règles de passage
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer une règle de passage
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /regles-passage/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier une règle de passage
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer une règle de passage
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /baremes-appreciation:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les barèmes d'appréciation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer un barème d'appréciation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /baremes-appreciation/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier un barème d'appréciation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer un barème d'appréciation
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /passages-niveaux:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les décisions de passage de niveau
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Évaluations et notes]
+      summary: Créer une décision de passage
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /passages-niveaux/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Évaluations et notes]
+      summary: Obtenir une décision de passage
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Évaluations et notes]
+      summary: Modifier une décision de passage
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Évaluations et notes]
+      summary: Supprimer une décision de passage
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /passages-niveaux/inscription/{id}:
+    get:
+      tags: [Évaluations et notes]
+      summary: Lister les décisions d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /passages-niveaux/decide:
+    post:
+      tags: [Évaluations et notes]
+      summary: Prendre une décision de passage
+      description: Action de validation réservée à l'administrateur ou aux rôles disposant du droit correspondant.
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /presences:
+    get:
+      tags: [Présences]
+      summary: Lister les présences
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Présences]
+      summary: Créer une présence
+      description: 'Champs requis : id_inscription, date_presence, statut, id_formateur et id_emploi_du_temps.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_inscription: 1
+              date_presence: '2026-10-22'
+              statut: present
+              id_formateur: 1
+              id_emploi_du_temps: 1
+              observation: ''
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Présences]
+      summary: Obtenir une présence
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Présences]
+      summary: Modifier une présence
+      requestBody:
+        $ref: '#/components/requestBodies/JsonBody'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [Présences]
+      summary: Supprimer une présence
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/inscription/{id}:
+    get:
+      tags: [Présences]
+      summary: Lister les présences d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/date/{date}:
+    get:
+      tags: [Présences]
+      summary: Lister les présences d'une date
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/formateur/{id}:
+    get:
+      tags: [Présences]
+      summary: Lister les présences d'un formateur
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/emploi-du-temps/{id}:
+    get:
+      tags: [Présences]
+      summary: Lister les présences d'une séance
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/feuille:
+    get:
+      tags: [Présences]
+      summary: Obtenir une feuille de présence
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: id_session
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: id_groupe
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: id_salle
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: id_formateur
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/statistiques/{id}:
+    get:
+      tags: [Présences]
+      summary: Obtenir les statistiques d'une inscription
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/mark:
+    post:
+      tags: [Présences]
+      summary: Marquer une présence
+      description: 'Champs requis : id_inscription, date_presence, statut, id_formateur et id_emploi_du_temps.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              id_inscription: 1
+              date_presence: '2026-10-22'
+              statut: present
+              id_formateur: 1
+              id_emploi_du_temps: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /presences/mark-bulk:
+    post:
+      tags: [Présences]
+      summary: Marquer plusieurs présences
+      description: date_presence, statut et ids (liste des identifiants d'inscription).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+            example:
+              date_presence: '2026-10-22'
+              statut: present
+              ids: [1, 2]
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /tableau-de-bord:
+    get:
+      tags: [Tableau de bord et rappels]
+      summary: Obtenir le tableau de bord
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /tableau-de-bord/rapport:
+    get:
+      tags: [Tableau de bord et rappels]
+      summary: Obtenir le rapport synthétique du tableau de bord
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /rappels:
+    get:
+      tags: [Tableau de bord et rappels]
+      summary: Lister les rappels de l'utilisateur connecté
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /rapports:
+    get:
+      tags: [Rapports et journal]
+      summary: Obtenir le catalogue des rapports disponibles
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /rapports/{code}:
+    get:
+      tags: [Rapports et journal]
+      summary: Générer un rapport
+      description: Consultez d'abord GET /rapports ; les filtres acceptés dépendent du rapport choisi.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          description: Code présent dans le catalogue des rapports.
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+  /journal:
+    get:
+      tags: [Rapports et journal]
+      summary: Rechercher dans le journal des opérations
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ressource
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: succes
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: debut
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: fin
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 300
+            minimum: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: PHPSESSID
+      description: Cookie créé automatiquement après l'appel à POST /auth/login.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Date:
+      name: date
+      in: query
+      required: false
+      description: Date au format AAAA-MM-JJ.
+      schema:
+        type: string
+        format: date
+  requestBodies:
+    JsonBody:
+      required: true
+      description: Corps JSON attendu par l'opération. Les champs dépendent de la ressource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+          example:
+            champ: valeur
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+      description: Objet JSON ; voir la description de la route pour les champs requis.
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          description: Données de la réponse, de forme variable selon la route.
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+  responses:
+    Success:
+      description: Réponse JSON de l'opération.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Error:
+      description: Erreur JSON (validation, authentification, permissions ou ressource introuvable).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

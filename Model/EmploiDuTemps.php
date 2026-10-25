@@ -2,9 +2,10 @@
 /**
  * Modèle EmploiDuTemps (table centrale : emplois_du_temps)
  *
- * Un créneau = un groupe dans une salle un jour donné.
+ * Un créneau = un groupe dans une salle un jour donné, à l'horaire du passage du groupe ce jour-là.
  * Un formateur appartient à une seule salle et y vient tous les jours ;
  * les auditeurs du groupe peuvent être répartis dans plusieurs salles.
+ * Un groupe qui vient plusieurs fois par semaine a un créneau par salle et par jour de passage.
  */
 
 require_once __DIR__ . '/Model.php';
@@ -17,7 +18,8 @@ class EmploiDuTemps extends Model
     public const JOURS = [1, 2, 3, 4, 5];
 
     protected array $fillable = [
-        'id_annee', 'id_groupe', 'id_salle', 'id_formateur', 'jour_semaine', 'statut',
+        'id_annee', 'id_session', 'id_groupe', 'id_salle', 'id_formateur', 'jour_semaine',
+        'heure_debut', 'heure_fin', 'statut', 'origine',
     ];
 
     /* ------------------------------------------------------------------
@@ -139,9 +141,6 @@ class EmploiDuTemps extends Model
         if ($isActive && $references['salle_statut'] !== 'disponible') {
             return 'Une salle indisponible ne peut pas recevoir de nouveau créneau.';
         }
-        if ((int) $references['jour_semaine'] !== (int) $assignment['jour_semaine']) {
-            return 'Le jour du créneau doit correspondre au jour hebdomadaire du groupe.';
-        }
         if ($references['formateur_salle'] !== null && (int) $references['formateur_salle'] !== (int) $assignment['id_salle']) {
             return 'Ce formateur appartient déjà à une autre salle et y reste toute la semaine.';
         }
@@ -214,7 +213,10 @@ class EmploiDuTemps extends Model
                        a.libelle AS annee_libelle,
                        g.code AS groupe_code, g.libelle AS groupe_libelle,
                        g.capacite AS groupe_capacite, g.statut AS groupe_actif,
-                       g.jour_semaine AS groupe_jour_semaine, g.heure_debut, g.heure_fin,
+                       g.jour_semaine AS groupe_jour_semaine,
+                       (SELECT GROUP_CONCAT(gp.jour_semaine ORDER BY gp.jour_semaine) FROM groupe_passages gp WHERE gp.id_groupe = g.id) AS groupe_passages,
+                       tf.id AS id_type_formation, tf.libelle AS formation_libelle, tf.couleur AS formation_couleur,
+                       s.passages_semaine AS session_passages_semaine,
                        sa.code AS salle_code, sa.libelle AS salle_libelle,
                        sa.capacite AS salle_capacite, sa.statut AS salle_statut,
                        f.matricule AS formateur_matricule, f.nom AS formateur_nom, f.prenom AS formateur_prenom,
@@ -223,12 +225,14 @@ class EmploiDuTemps extends Model
                        s.statut AS session_statut, s.date_debut AS session_date_debut, s.date_fin AS session_date_fin,
                        a.date_debut AS annee_date_debut, a.date_fin AS annee_date_fin,
                        (SELECT COUNT(DISTINCT i.id) FROM inscriptions i
-                        WHERE i.id_emploi_du_temps = e.id AND i.statut = 'active') AS inscrits_actifs
+                        JOIN emplois_du_temps ei ON ei.id = i.id_emploi_du_temps
+                        WHERE ei.id_groupe = e.id_groupe AND ei.id_salle = e.id_salle AND i.statut = 'active') AS inscrits_actifs
                 FROM {$this->table} e
                 JOIN groupes g    ON g.id  = e.id_groupe
                 JOIN salles sa    ON sa.id = e.id_salle
                 JOIN formateurs f ON f.id  = e.id_formateur
                 JOIN sessions s   ON s.id  = g.id_session AND s.id_annee = e.id_annee
+                JOIN types_formations tf ON tf.id = s.id_type_formation
                 JOIN annees_scolaires a ON a.id = e.id_annee";
 
         $params = [];
@@ -242,7 +246,7 @@ class EmploiDuTemps extends Model
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
 
-        $sql .= " ORDER BY e.jour_semaine, g.code";
+        $sql .= " ORDER BY e.jour_semaine, e.heure_debut, g.code, sa.code";
 
         return $this->fetchAll($sql, $params);
     }

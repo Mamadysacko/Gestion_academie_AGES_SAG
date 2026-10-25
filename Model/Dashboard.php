@@ -718,7 +718,8 @@ class Dashboard extends Model
              JOIN salles sa ON sa.id = e.id_salle
              JOIN formateurs f ON f.id = e.id_formateur
              {$anneeJoin}
-             LEFT JOIN inscriptions i ON i.id_emploi_du_temps = e.id AND i.statut = 'active'
+             LEFT JOIN emplois_du_temps ei ON ei.id_groupe = e.id_groupe AND ei.id_salle = e.id_salle
+             LEFT JOIN inscriptions i ON i.id_emploi_du_temps = ei.id AND i.statut = 'active'
              WHERE e.statut = 1
                AND g.statut = 1
                AND e.jour_semaine = :planning_weekday
@@ -818,7 +819,8 @@ class Dashboard extends Model
                     JOIN groupes g ON g.id = e.id_groupe
                     JOIN sessions s ON s.id = g.id_session
                     {$anneeJoin}
-                    JOIN inscriptions i ON i.id_emploi_du_temps = e.id AND i.statut = 'active'
+                    JOIN emplois_du_temps ei ON ei.id_groupe = e.id_groupe AND ei.id_salle = e.id_salle
+                    JOIN inscriptions i ON i.id_emploi_du_temps = ei.id AND i.statut = 'active'
                     LEFT JOIN presences p ON p.id_inscription = i.id AND p.date_presence = :missing_date
                     WHERE e.statut = 1
                       AND g.statut = 1

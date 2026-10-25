@@ -21,7 +21,7 @@ class GroupeController
     public function getAll(): void
     {
         try {
-            $groupes = $this->model->getAll('code ASC');
+            $groupes = $this->model->getAllWithPassages();
             $this->sendResponse(200, [
                 'success' => true,
                 'data' => $groupes
@@ -185,7 +185,7 @@ class GroupeController
             }
             $data['statut'] = (int) $data['statut'];
 
-            $id = $this->model->create($data);
+            $id = $this->model->createWithPassage($data);
 
             $this->sendResponse(201, [
                 'success' => true,

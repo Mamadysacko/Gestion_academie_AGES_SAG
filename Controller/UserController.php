@@ -69,7 +69,7 @@ class UserController
             }
 
             // Suppression du mot de passe
-            unset($user['password']);
+            unset($user['password'], $user['token_version']);
 
             $this->sendResponse(200, [
                 'success' => true,
@@ -258,7 +258,7 @@ class UserController
             }
 
             $data = $this->getJsonInput();
-            if ((int) ($_SESSION['user_id'] ?? 0) === $id &&
+            if ((int) Authorization::userId() === $id &&
                 array_key_exists('actif', $data) && !(bool) $data['actif']
             ) {
                 $this->sendError(409, "Vous ne pouvez pas désactiver votre propre compte.");
@@ -354,6 +354,12 @@ class UserController
             $db->beginTransaction();
             try {
                 $success = $this->model->update($id, $data);
+                if (isset($data['password']) && $data['password'] !== '') {
+                    // Nouveau mot de passe : les jetons déjà émis pour ce compte ne sont plus valables.
+                    require_once __DIR__ . '/../Model/RefreshToken.php';
+                    (new RefreshToken())->revokeAllForUser($id, 'mot_de_passe');
+                    $db->prepare('UPDATE users SET token_version = token_version + 1 WHERE id = :id')->execute(['id' => $id]);
+                }
                 $formateurData = [
                     'nom' => $data['nom'] ?? $existingUser['nom'],
                     'prenom' => $data['prenom'] ?? $existingUser['prenom'],
@@ -417,7 +423,7 @@ class UserController
     public function delete(int $id): void
     {
         try {
-            if ((int) ($_SESSION['user_id'] ?? 0) === $id) {
+            if ((int) Authorization::userId() === $id) {
                 $this->sendError(409, "Vous ne pouvez pas supprimer votre propre compte.");
                 return;
             }
@@ -463,14 +469,21 @@ class UserController
                 return;
             }
 
-            session_regenerate_id(true);
-            $_SESSION['user_id'] = (int) $user['id'];
+            if (AUTH_SESSION_FALLBACK) {
+                if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+                    session_regenerate_id(true);
+                }
+                $_SESSION['user_id'] = (int) $user['id'];
+            }
+            require_once __DIR__ . '/AuthController.php';
+            $tokens = AuthController::tokenPayload($user);
+            unset($user['token_version']);
 
             $this->sendResponse(200, [
                 'success' => true,
                 'message' => 'Authentification réussie.',
                 'data' => $user
-            ]);
+            ] + $tokens);
         } catch (Exception $e) {
             $this->sendError(500, "Erreur lors de l'authentification : " . $e->getMessage());
         }
@@ -484,7 +497,7 @@ class UserController
     {
         $db = null;
         try {
-            if ((int) ($_SESSION['user_id'] ?? 0) === $id) {
+            if ((int) Authorization::userId() === $id) {
                 $this->sendError(409, "Vous ne pouvez pas désactiver votre propre compte.");
                 return;
             }

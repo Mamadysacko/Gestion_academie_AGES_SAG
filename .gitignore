@@ -1,0 +1,5 @@
+vendor/
+composer.phar
+.phpunit.cache/
+config/jwt_secret.key
+database/backups/

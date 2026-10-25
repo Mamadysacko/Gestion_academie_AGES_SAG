@@ -28,4 +28,28 @@ class Database {
         }
         return self::$instance;
     }
+
+    /**
+     * Exécute $work dans une transaction et retourne son résultat.
+     * Si une transaction est déjà ouverte (appel imbriqué, tests), elle est réutilisée :
+     * c'est alors l'appelant extérieur qui valide ou annule l'ensemble.
+     */
+    public static function transaction(callable $work): mixed
+    {
+        $db = self::getInstance();
+        if ($db->inTransaction()) {
+            return $work($db);
+        }
+        $db->beginTransaction();
+        try {
+            $result = $work($db);
+            $db->commit();
+            return $result;
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $e;
+        }
+    }
 }

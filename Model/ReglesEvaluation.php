@@ -212,7 +212,7 @@ class ReglesEvaluation extends Model
             'nb_evaluations' => $nb,
             'moyenne_admission' => round((float) $moyenne, 2),
             'taux_presence_min' => round((float) $presence, 2),
-            'passage_automatique' => in_array($data['passage_automatique'] ?? 1, [true, 1, '1', 'true', 'on'], true) ? 1 : 0,
+            'passage_automatique' => 0, // les passages de niveau sont toujours approuvés manuellement
         ];
     }
 
@@ -239,7 +239,9 @@ class ReglesEvaluation extends Model
      */
     private function inScaleTransaction(callable $change): void
     {
-        $this->db->beginTransaction();
+        // Utilisable seul (transaction propre) ou dans une transaction déjà ouverte (point de sauvegarde).
+        $nested = $this->db->inTransaction();
+        $nested ? $this->db->exec('SAVEPOINT bareme') : $this->db->beginTransaction();
         try {
             $change();
             $rows = $this->getBareme();
@@ -254,9 +256,17 @@ class ReglesEvaluation extends Model
                     throw new InvalidArgumentException('Les seuils doivent croître strictement avec la note (1 → 4).');
                 }
             }
-            $this->db->commit();
+            if ($nested) {
+                $this->db->exec('RELEASE SAVEPOINT bareme');
+            } else {
+                $this->db->commit();
+            }
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($nested) {
+                $this->db->exec('ROLLBACK TO SAVEPOINT bareme');
+            } else {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }

@@ -67,6 +67,7 @@ class Role extends Model
             'presences' => ['read', 'create', 'update', 'delete', 'export', 'validate'],
             'utilisateurs' => ['read', 'create', 'update', 'delete', 'export', 'validate'],
             'parametres' => ['read', 'create', 'update', 'delete', 'export', 'validate'],
+            'passages-niveau' => ['validate'],
         ];
 
         $db = $this->db;
