@@ -31,6 +31,21 @@ foreach ($tables as $table) {
     $create = preg_replace('/ AUTO_INCREMENT=\d+/', '', $create);
     $out .= "\n--\n-- Table structure for table `{$table}`\n--\n\nDROP TABLE IF EXISTS `{$table}`;\n{$create};\n";
 }
+// Vues et déclencheurs, sans DEFINER ni nom de base (portables d'une installation à l'autre).
+$portable = static fn(string $sql): string => str_replace('`' . DB_NAME . '`.', '', preg_replace('/DEFINER=`[^`]*`@`[^`]*`\s*/', '', $sql));
+foreach ($db->query("SELECT TABLE_NAME FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME")->fetchAll(PDO::FETCH_COLUMN) as $view) {
+    $create = $portable($db->query("SHOW CREATE VIEW `{$view}`")->fetch()['Create View']);
+    $out .= "\n--\n-- View structure for view `{$view}`\n--\n\nDROP VIEW IF EXISTS `{$view}`;\n{$create};\n";
+}
+$triggers = $db->query("SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME")->fetchAll(PDO::FETCH_COLUMN);
+if ($triggers !== []) {
+    $out .= "\n--\n-- Déclencheurs de cohérence\n--\n\nDELIMITER $$\n";
+    foreach ($triggers as $trigger) {
+        $create = $portable($db->query("SHOW CREATE TRIGGER `{$trigger}`")->fetch()['SQL Original Statement']);
+        $out .= "\nDROP TRIGGER IF EXISTS `{$trigger}`$$\n{$create}$$\n";
+    }
+    $out .= "\nDELIMITER ;\n";
+}
 $out .= "\nSET FOREIGN_KEY_CHECKS = 1;\n";
 
 file_put_contents(__DIR__ . '/DB Gestion Academie.sql', $out);

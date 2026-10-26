@@ -72,10 +72,7 @@ final class ProfileController
             $newPassword = (string) $data['new_password'];
             $currentPassword = (string) ($data['current_password'] ?? '');
             $storedPassword = $userModel->getPasswordForSync($userId);
-            $currentPasswordValid = $storedPassword !== null && (
-                password_verify($currentPassword, $storedPassword)
-                || hash_equals($storedPassword, $currentPassword)
-            );
+            $currentPasswordValid = $storedPassword !== null && password_verify($currentPassword, $storedPassword);
             if (!$currentPasswordValid) {
                 $this->sendError(400, 'Le mot de passe actuel est incorrect.');
                 return;
@@ -87,12 +84,10 @@ final class ProfileController
             $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
         }
 
-        $formateurModel = new Formateur();
-        $formateur = $formateurModel->getByUser($userId);
-        if ($formateur !== null && $email !== '') {
-            $duplicateTrainerEmail = $formateurModel->findByEmail($email);
-            if ($duplicateTrainerEmail !== null && (int) $duplicateTrainerEmail['id'] !== (int) $formateur['id']) {
-                $this->sendError(409, 'Cette adresse e-mail est déjà utilisée par un formateur.');
+        if ($telephone !== '') {
+            $phoneOwner = $userModel->findByPhone($telephone);
+            if ($phoneOwner !== null && (int) $phoneOwner['id'] !== $userId) {
+                $this->sendError(409, 'Ce numéro de téléphone est déjà utilisé par un autre compte.');
                 return;
             }
         }
@@ -109,20 +104,8 @@ final class ProfileController
             if ($passwordHash !== null) {
                 $changes['password'] = $passwordHash;
             }
+            // Pour un formateur, l'identité affichée partout provient de ce même compte.
             $updated = $userModel->update($userId, $changes);
-
-            if ($formateur !== null) {
-                $trainerChanges = [
-                    'nom' => $nom,
-                    'prenom' => $prenom,
-                    'email' => $changes['email'],
-                    'telephone' => $changes['telephone'],
-                ];
-                if ($passwordHash !== null) {
-                    $trainerChanges['password'] = $passwordHash;
-                }
-                $updated = $formateurModel->update((int) $formateur['id'], $trainerChanges) || $updated;
-            }
 
             if (!$updated) {
                 throw new RuntimeException('Le profil n’a pas été modifié.');

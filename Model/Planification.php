@@ -71,11 +71,10 @@ class Planification extends Model
         $formation = $this->formations->find((int) $session['id_type_formation']);
         $config = $this->formations->snapshot($formation);
         $this->db->prepare(
-            'UPDATE sessions SET config_formation = :config, config_version = :version, passages_semaine = :passages WHERE id = :id'
+            'UPDATE sessions SET config_formation = :config, config_version = :version WHERE id = :id'
         )->execute([
             'config' => json_encode($config, JSON_UNESCAPED_UNICODE),
             'version' => (int) $formation['config_version'],
-            'passages' => $config['passages_semaine'],
             'id' => $sessionId,
         ]);
         return $config + ['version' => (int) $formation['config_version']];
@@ -96,7 +95,7 @@ class Planification extends Model
              FROM salles sa
              LEFT JOIN formation_salles fs ON fs.id_salle = sa.id AND fs.id_type_formation = :f1
              LEFT JOIN formation_salles own ON own.id_salle = sa.id AND own.mode = 'dediee'
-             LEFT JOIN formateurs f ON f.id_salle = sa.id
+             LEFT JOIN v_formateurs f ON f.id_salle = sa.id
              WHERE " . ($hasRooms ? 'fs.id_salle IS NOT NULL' : 'own.id_salle IS NULL') . "
              ORDER BY COALESCE(fs.priorite, 999), sa.code",
             ['f1' => $formationId]
@@ -429,7 +428,7 @@ class Planification extends Model
              JOIN sessions s ON s.id = e.id_session
              JOIN groupes g ON g.id = e.id_groupe
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              WHERE e.statut = 1 AND g.statut = 1 AND e.id <> :exclude
                AND s.statut IN ('planifiee', 'ouverte', 'en_cours')
                AND e.jour_semaine = :jour AND e.heure_debut < :fin AND :debut < e.heure_fin
@@ -711,7 +710,7 @@ class Planification extends Model
              JOIN sessions s1 ON s1.id = a.id_session JOIN sessions s2 ON s2.id = b.id_session
              JOIN groupes ga ON ga.id = a.id_groupe JOIN groupes gb ON gb.id = b.id_groupe
              JOIN salles sa1 ON sa1.id = a.id_salle JOIN salles sa2 ON sa2.id = b.id_salle
-             JOIN formateurs fa ON fa.id = a.id_formateur
+             JOIN v_formateurs fa ON fa.id = a.id_formateur
              WHERE a.statut = 1 AND ga.statut = 1 AND gb.statut = 1
                AND s1.statut IN ('planifiee', 'ouverte', 'en_cours') AND s2.statut IN ('planifiee', 'ouverte', 'en_cours')
                AND s1.date_debut <= s2.date_fin AND s2.date_debut <= s1.date_fin {$scope}",
@@ -863,7 +862,7 @@ class Planification extends Model
              FROM salles sa
              LEFT JOIN formation_salles own ON own.id_salle = sa.id AND own.mode = 'dediee'
              LEFT JOIN types_formations tf ON tf.id = own.id_type_formation
-             LEFT JOIN formateurs f ON f.id_salle = sa.id
+             LEFT JOIN v_formateurs f ON f.id_salle = sa.id
              ORDER BY sa.code"
         );
         usort($rooms, static fn($a, $b) => strnatcasecmp($a['code'], $b['code']));
@@ -922,7 +921,7 @@ class Planification extends Model
                  FROM emplois_du_temps e
                  JOIN groupes g ON g.id = e.id_groupe
                  JOIN salles sa ON sa.id = e.id_salle
-                 JOIN formateurs f ON f.id = e.id_formateur
+                 JOIN v_formateurs f ON f.id = e.id_formateur
                  WHERE e.id_session = :sid AND e.statut = 1 AND g.statut = 1",
                 ['sid' => $sid]
             );

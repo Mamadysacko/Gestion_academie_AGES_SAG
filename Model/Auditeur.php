@@ -59,7 +59,7 @@ class Auditeur extends Model
              JOIN emplois_du_temps e ON e.id = COALESCE(p.id_emploi_du_temps, i.id_emploi_du_temps)
              JOIN groupes g ON g.id = e.id_groupe
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = p.id_formateur
+             JOIN v_formateurs f ON f.id = p.id_formateur
              WHERE i.id_auditeur = :id
              ORDER BY p.date_presence DESC",
             ['id' => $id]

@@ -161,7 +161,6 @@ class FormationConfig extends Model
             }
             if ($configChanged) {
                 $set['config_version'] = (int) $current['config_version'] + 1;
-                $set['config_updated_at'] = date('Y-m-d H:i:s');
             }
             if ($set !== []) {
                 $assignments = implode(', ', array_map(static fn($c) => "{$c} = :{$c}", array_keys($set)));
@@ -220,7 +219,7 @@ class FormationConfig extends Model
                       WHERE fs2.id_salle = fs.id_salle AND fs2.mode = 'dediee' LIMIT 1) AS proprietaire
              FROM formation_salles fs
              JOIN salles sa ON sa.id = fs.id_salle
-             LEFT JOIN formateurs f ON f.id_salle = sa.id
+             LEFT JOIN v_formateurs f ON f.id_salle = sa.id
              LEFT JOIN users u ON u.id = fs.autorise_par
              WHERE fs.id_type_formation = :id
              ORDER BY fs.mode, fs.priorite, sa.code",

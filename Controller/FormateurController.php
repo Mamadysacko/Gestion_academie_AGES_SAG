@@ -216,6 +216,10 @@ class FormateurController
                     return;
                 }
             }
+            if ($data['telephone'] !== null && (new User())->findByPhone($data['telephone']) !== null) {
+                $this->sendError(409, "Ce numéro de téléphone est déjà utilisé par un autre compte.");
+                return;
+            }
 
             // Valeur par défaut pour actif
             if (array_key_exists('id_salle', $data)) {
@@ -254,7 +258,13 @@ class FormateurController
                 return;
             }
 
-            $db->beginTransaction();
+            $ownTx = !$db->inTransaction();
+
+            if ($ownTx) {
+
+                $db->beginTransaction();
+
+            }
             try {
                 $userModel = new User();
                 $userId = $userModel->create([
@@ -266,11 +276,13 @@ class FormateurController
                     'role_id' => (int) $roleId,
                     'actif' => $data['actif'],
                 ]);
-                $data['user_id'] = $userId;
-                $id = $this->model->create($data);
-                $db->commit();
+                // La fiche formateur ne garde que le compte, le matricule et la salle.
+                $id = $this->model->create(['user_id' => $userId, 'matricule' => $data['matricule'], 'id_salle' => $data['id_salle'] ?? null]);
+                if ($ownTx) {
+                    $db->commit();
+                }
             } catch (Throwable $error) {
-                if ($db->inTransaction()) {
+                if (($ownTx ?? false) && $db->inTransaction()) {
                     $db->rollBack();
                 }
                 throw $error;
@@ -282,7 +294,7 @@ class FormateurController
                 'data' => ['id' => $id, 'user_id' => $userId]
             ]);
         } catch (PDOException $e) {
-            if ($db instanceof PDO && $db->inTransaction()) {
+            if ($db instanceof PDO && ($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError((string) $e->getCode() === '23000' ? 409 : 500,
@@ -290,12 +302,12 @@ class FormateurController
                     ? "Le matricule ou l'adresse e-mail est déjà utilisé."
                     : "Erreur lors de la création du formateur : " . $e->getMessage());
         } catch (Exception $e) {
-            if ($db instanceof PDO && $db->inTransaction()) {
+            if ($db instanceof PDO && ($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError(500, "Erreur lors de la création du formateur : " . $e->getMessage());
         } catch (Throwable $e) {
-            if ($db instanceof PDO && $db->inTransaction()) {
+            if ($db instanceof PDO && ($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError(500, "Erreur lors de la création du compte formateur : " . $e->getMessage());
@@ -385,39 +397,43 @@ class FormateurController
                     return;
                 }
 
-                // Vérification de l'unicité de l'email
-                $existing = $this->model->findByEmail($data['email']);
-                if ($existing !== null && (int)$existing['id'] !== $id) {
-                    $this->sendError(409, "Un autre formateur avec cet email existe déjà.");
+                // Vérification de l'unicité de l'email (porté par le compte utilisateur)
+                $existing = (new User())->findByEmail($data['email']);
+                if ($existing !== null && (int) $existing['id'] !== (int) $current['user_id']) {
+                    $this->sendError(409, "Un autre compte utilise déjà cet email.");
+                    return;
+                }
+            }
+            if (!empty($data['telephone'])) {
+                $phoneOwner = (new User())->findByPhone($data['telephone']);
+                if ($phoneOwner !== null && (int) $phoneOwner['id'] !== (int) $current['user_id']) {
+                    $this->sendError(409, "Ce numéro de téléphone est déjà utilisé par un autre compte.");
                     return;
                 }
             }
 
-            $userId = $this->model->getUserId($id);
             $db = $this->model->getDatabase();
-            $db->beginTransaction();
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
+            }
             try {
+                // Fiche (matricule, salle) et identité du compte (nom, contacts, actif, mot de passe haché).
                 $success = $this->model->update($id, $data);
-                if ($userId !== null) {
-                    $userFields = [];
-                    foreach (['nom', 'prenom', 'telephone', 'email', 'actif', 'password'] as $field) {
-                        if (array_key_exists($field, $data)) {
-                            $userFields[$field] = $data[$field];
-                        }
-                    }
-                    if ($userFields !== []) {
-                        $sets = implode(', ', array_map(static fn(string $field): string => "{$field} = :{$field}", array_keys($userFields)));
-                        $userFields['user_id'] = $userId;
-                        $db->prepare("UPDATE users SET {$sets} WHERE id = :user_id")->execute($userFields);
-                    }
+                if (!empty($data['password'])) {
+                    (new User())->revokeSessions((int) $current['user_id']);
                 }
                 if ($success) {
-                    $db->commit();
+                    if ($ownTx) {
+                        $db->commit();
+                    }
                 } else {
-                    $db->rollBack();
+                    if ($ownTx ?? false) {
+                        $db->rollBack();
+                    }
                 }
             } catch (Throwable $error) {
-                if ($db->inTransaction()) {
+                if (($ownTx ?? false) && $db->inTransaction()) {
                     $db->rollBack();
                 }
                 throw $error;
@@ -432,7 +448,7 @@ class FormateurController
                 $this->sendError(400, "Aucune donnée valide à mettre à jour.");
             }
         } catch (PDOException $e) {
-            if (isset($db) && $db->inTransaction()) {
+            if (isset($db) && ($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError((string) $e->getCode() === '23000' ? 409 : 500,
@@ -440,7 +456,7 @@ class FormateurController
                     ? "Le matricule ou l'adresse e-mail est déjà utilisé."
                     : "Erreur lors de la mise à jour du formateur : " . $e->getMessage());
         } catch (Exception $e) {
-            if (isset($db) && $db->inTransaction()) {
+            if (isset($db) && ($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError(500, "Erreur lors de la mise à jour du formateur : " . $e->getMessage());
@@ -490,20 +506,22 @@ class FormateurController
     {
         $db = $this->model->getDatabase();
         try {
-            $db->beginTransaction();
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
+            }
             $newStatus = $this->model->toggleActif($id);
 
             if ($newStatus === null) {
-                $db->rollBack();
+                if ($ownTx ?? false) {
+                    $db->rollBack();
+                }
                 $this->sendError(404, "Formateur introuvable.");
                 return;
             }
-            $userId = $this->model->getUserId($id);
-            if ($userId !== null) {
-                $db->prepare('UPDATE users SET actif = :actif WHERE id = :id')
-                    ->execute(['actif' => $newStatus, 'id' => $userId]);
+            if ($ownTx) {
+                $db->commit();
             }
-            $db->commit();
 
             $message = $newStatus === 1 ? 'Formateur activé avec succès.' : 'Formateur désactivé avec succès.';
 
@@ -513,7 +531,7 @@ class FormateurController
                 'data' => ['actif' => $newStatus]
             ]);
         } catch (Throwable $e) {
-            if ($db->inTransaction()) {
+            if (($ownTx ?? false) && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError(500, "Erreur lors de la modification du statut : " . $e->getMessage());

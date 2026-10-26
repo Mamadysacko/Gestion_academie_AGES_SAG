@@ -45,7 +45,7 @@ class Inscription extends Model
              JOIN sessions s ON s.id = i.id_session
              JOIN annees_scolaires an ON an.id = i.id_annee
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur";
+             JOIN v_formateurs f ON f.id = e.id_formateur";
 
     /** Liste enrichie destinée au registre d'inscriptions (filtrable par année / session). */
     public function getAllWithDetails(?int $idAnnee = null, ?int $idSession = null): array

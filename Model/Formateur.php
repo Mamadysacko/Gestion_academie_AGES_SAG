@@ -1,6 +1,10 @@
 <?php
 /**
- * Modèle Formateur (table : formateurs)
+ * Modèle Formateur (table : formateurs, lecture : vue v_formateurs)
+ *
+ * Un formateur est un compte utilisateur (`users` : nom, prénom, contacts, mot de passe, actif)
+ * complété de ce qui lui est propre (`formateurs` : matricule, salle attitrée). La vue
+ * `v_formateurs` réunit les deux avec les colonnes historiques (nom, prenom, telephone, email, actif).
  */
 
 require_once __DIR__ . '/Model.php';
@@ -9,48 +13,55 @@ class Formateur extends Model
 {
     protected string $table = 'formateurs';
 
-    protected array $fillable = [
-        'user_id', 'matricule', 'nom', 'prenom', 'password', 'telephone', 'email', 'id_salle', 'actif',
-    ];
+    /** Vue de lecture : fiche formateur + identité du compte. */
+    public const VIEW = 'v_formateurs';
+
+    /** Seules les colonnes propres au formateur ; l'identité s'écrit dans `users`. */
+    protected array $fillable = ['user_id', 'matricule', 'id_salle'];
+
+    /** Colonnes d'identité, enregistrées dans le compte utilisateur lié. */
+    public const IDENTITY_FIELDS = ['nom', 'prenom', 'telephone', 'email', 'actif', 'password'];
 
     private const TRAINER_COLUMNS = 'f.id, f.user_id, f.matricule, f.nom, f.prenom, f.telephone, f.email,
         f.id_salle, f.actif, f.created_at, f.updated_at,
         sa.code AS salle_code, sa.libelle AS salle_libelle, sa.capacite AS salle_capacite';
 
-    /** Crée un formateur en enregistrant le mot de passe tel que fourni. */
-    public function create(array $data): int
+    /** Fiche complète (identité comprise) par identifiant. */
+    public function find(int $id): ?array
     {
-        return parent::create($data);
+        return $this->fetchOne('SELECT * FROM ' . self::VIEW . ' WHERE id = :id LIMIT 1', ['id' => $id]);
     }
 
     /**
-     * Met à jour un formateur. Un mot de passe vide est ignoré afin de conserver
-     * le mot de passe actuel.
+     * Met à jour la fiche (matricule, salle) et l'identité du compte lié (nom, contacts, actif,
+     * mot de passe). Retourne true si au moins une valeur a été enregistrée.
      */
     public function update(int $id, array $data): bool
     {
-        if (array_key_exists('password', $data)) {
-            if ($data['password'] === '' || $data['password'] === null) {
-                unset($data['password']);
-            }
+        $updated = parent::update($id, $data);
+        $identity = array_intersect_key($data, array_flip(self::IDENTITY_FIELDS));
+        $userId = $this->getUserId($id);
+        if ($identity !== [] && $userId !== null) {
+            require_once __DIR__ . '/User.php';
+            $updated = (new User())->update($userId, $identity) || $updated;
         }
-        return parent::update($id, $data);
+        return $updated;
     }
 
     /** Trouve un formateur par son matricule unique. */
     public function findByMatricule(string $matricule): ?array
     {
         return $this->fetchOne(
-            "SELECT * FROM {$this->table} WHERE matricule = :matricule LIMIT 1",
+            'SELECT * FROM ' . self::VIEW . ' WHERE matricule = :matricule LIMIT 1',
             ['matricule' => $matricule]
         );
     }
 
-    /** Trouve un formateur par son email unique. */
+    /** Trouve un formateur par l'e-mail (unique) de son compte. */
     public function findByEmail(string $email): ?array
     {
         return $this->fetchOne(
-            "SELECT * FROM {$this->table} WHERE email = :email LIMIT 1",
+            'SELECT * FROM ' . self::VIEW . ' WHERE email = :email LIMIT 1',
             ['email' => $email]
         );
     }
@@ -60,7 +71,7 @@ class Formateur extends Model
     {
         return $this->fetchAll(
             "SELECT " . self::TRAINER_COLUMNS . "
-             FROM {$this->table} f
+             FROM " . self::VIEW . " f
              LEFT JOIN salles sa ON sa.id = f.id_salle
              WHERE f.actif = 1
              ORDER BY f.nom, f.prenom"
@@ -71,7 +82,7 @@ class Formateur extends Model
     {
         return $this->fetchOne(
             "SELECT " . self::TRAINER_COLUMNS . "
-             FROM {$this->table} f
+             FROM " . self::VIEW . " f
              LEFT JOIN salles sa ON sa.id = f.id_salle
              WHERE f.id = :id
              LIMIT 1",
@@ -83,7 +94,7 @@ class Formateur extends Model
     {
         return $this->fetchAll(
             "SELECT " . self::TRAINER_COLUMNS . "
-             FROM {$this->table} f
+             FROM " . self::VIEW . " f
              LEFT JOIN salles sa ON sa.id = f.id_salle
              ORDER BY f.nom, f.prenom"
         );
@@ -93,7 +104,7 @@ class Formateur extends Model
     {
         return $this->fetchOne(
             "SELECT " . self::TRAINER_COLUMNS . "
-             FROM {$this->table} f
+             FROM " . self::VIEW . " f
              LEFT JOIN salles sa ON sa.id = f.id_salle
              WHERE f.id_salle = :id_salle
              LIMIT 1",
@@ -149,7 +160,7 @@ class Formateur extends Model
         $foreignTrainer = $this->fetchOne(
             "SELECT f.nom, f.prenom
              FROM emplois_du_temps e
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              WHERE e.id_salle = :id_salle AND e.id_formateur <> :id_formateur
              LIMIT 1",
             ['id_salle' => $id_salle, 'id_formateur' => $id_formateur]
@@ -187,11 +198,14 @@ class Formateur extends Model
         return $userId === false || $userId === null ? null : (int) $userId;
     }
 
-    /** Active / désactive un formateur. Retourne le nouvel état (1/0) ou null si introuvable. */
+    /**
+     * Active / désactive un formateur : c'est son compte qui est activé ou désactivé.
+     * Retourne le nouvel état (1/0) ou null si introuvable.
+     */
     public function toggleActif(int $id): ?int
     {
         $stmt = $this->db->prepare(
-            "UPDATE {$this->table} SET actif = 1 - actif WHERE id = :id"
+            "UPDATE users u JOIN {$this->table} f ON f.user_id = u.id SET u.actif = 1 - u.actif WHERE f.id = :id"
         );
         $stmt->execute(['id' => $id]);
 
@@ -199,7 +213,7 @@ class Formateur extends Model
             return null;
         }
         return (int) $this->fetchColumn(
-            "SELECT actif FROM {$this->table} WHERE id = :id",
+            'SELECT actif FROM ' . self::VIEW . ' WHERE id = :id',
             ['id' => $id]
         );
     }
@@ -208,7 +222,7 @@ class Formateur extends Model
     public function getByUser(int $user_id): ?array
     {
         return $this->fetchOne(
-            "SELECT * FROM {$this->table} WHERE user_id = :user_id LIMIT 1",
+            'SELECT * FROM ' . self::VIEW . ' WHERE user_id = :user_id LIMIT 1',
             ['user_id' => $user_id]
         );
     }

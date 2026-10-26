@@ -152,6 +152,23 @@ class AnneeScolaireController
                     return;
                 }
             }
+            // Une année ne peut pas être raccourcie en laissant une de ses sessions dehors.
+            $currentYear = $this->model->find($id);
+            if ($currentYear !== null && (isset($data['date_debut']) || isset($data['date_fin']))) {
+                $stmt = Database::getInstance()->prepare(
+                    'SELECT code FROM sessions WHERE id_annee = :id AND (date_debut < :debut OR date_fin > :fin) LIMIT 1'
+                );
+                $stmt->execute([
+                    'id' => $id,
+                    'debut' => $data['date_debut'] ?? $currentYear['date_debut'],
+                    'fin' => $data['date_fin'] ?? $currentYear['date_fin'],
+                ]);
+                $outside = $stmt->fetchColumn();
+                if ($outside !== false) {
+                    $this->sendError(409, "La session {$outside} sortirait de ces nouvelles dates : modifiez d’abord la session.");
+                    return;
+                }
+            }
 
             $success = $this->model->update($id, $data);
 

@@ -31,10 +31,20 @@ final class AuthTokenTest extends ControllerTestCase
         self::assertSame(1, (int) $this->scalar('SELECT COUNT(*) FROM refresh_tokens WHERE token_hash = ?', [hash('sha256', $json['refresh_token'])]));
     }
 
-    public function testUnAncienMotDePasseEnClairEstHacheALaConnexion(): void
+    public function testUnMotDePasseStockeEnClairNEstPlusAccepte(): void
     {
-        $this->login();
-        self::assertTrue(password_verify('mot-de-passe-factice', (string) $this->scalar('SELECT password FROM users WHERE id = 1')));
+        $this->scalar("UPDATE users SET password = 'en-clair' WHERE id = 2");
+        $this->loginAs(null);
+        [$code] = $this->request(fn() => (new UserController())->authenticate(), ['email' => 'secretaire@test.local', 'password' => 'en-clair']);
+        self::assertSame(401, $code);
+    }
+
+    public function testLaConnexionParTelephoneIgnoreLaPresentationDuNumero(): void
+    {
+        $this->loginAs(null);
+        [$code, $json] = $this->request(fn() => (new UserController())->authenticate(), ['email' => '620000002', 'password' => 'mot-de-passe-factice']);
+        self::assertSame(200, $code, json_encode($json));
+        self::assertSame(2, (int) $json['data']['id']);
     }
 
     public function testLeJetonDAccesAuthentifieSansSession(): void

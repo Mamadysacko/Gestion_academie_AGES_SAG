@@ -91,7 +91,7 @@ class Dashboard extends Model
         // ── Ressources globales ──
         $resourceCounts = $this->fetchOne(
             "SELECT
-                (SELECT COUNT(*) FROM formateurs WHERE actif = 1) AS formateurs_actifs,
+                (SELECT COUNT(*) FROM v_formateurs WHERE actif = 1) AS formateurs_actifs,
                 (SELECT COUNT(*) FROM salles)                     AS salles_total,
                 (SELECT COUNT(*) FROM salles WHERE statut = 'disponible') AS salles_disponibles,
                 (SELECT COUNT(*) FROM auditeurs)                  AS auditeurs_total"
@@ -438,7 +438,7 @@ class Dashboard extends Model
         return [
             'groupes' => $this->fetchAll("SELECT DISTINCT g.id, g.code, g.libelle {$base} ORDER BY g.code", $scope['params']),
             'salles' => $this->fetchAll("SELECT DISTINCT sa.id, sa.code, sa.libelle FROM salles sa WHERE sa.id IN (SELECT e.id_salle {$base}) ORDER BY sa.code", $scope['params']),
-            'formateurs' => $this->fetchAll("SELECT DISTINCT f.id, f.nom, f.prenom FROM formateurs f WHERE f.id IN (SELECT e.id_formateur {$base}) ORDER BY f.nom", $scope['params']),
+            'formateurs' => $this->fetchAll("SELECT DISTINCT f.id, f.nom, f.prenom FROM v_formateurs f WHERE f.id IN (SELECT e.id_formateur {$base}) ORDER BY f.nom", $scope['params']),
         ];
     }
 
@@ -716,7 +716,7 @@ class Dashboard extends Model
              JOIN types_formations tf ON tf.id = s.id_type_formation
              JOIN niveaux n ON n.id = s.id_niveau
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              {$anneeJoin}
              LEFT JOIN emplois_du_temps ei ON ei.id_groupe = e.id_groupe AND ei.id_salle = e.id_salle
              LEFT JOIN inscriptions i ON i.id_emploi_du_temps = ei.id AND i.statut = 'active'

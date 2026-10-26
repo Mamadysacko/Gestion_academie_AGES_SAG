@@ -153,6 +153,11 @@ class SessionController
                 $this->sendError(400, "La date de fin doit être égale ou postérieure à la date de début.");
                 return;
             }
+            $datesError = $this->model->datesRefusal((int) $data['id_annee'], (string) $data['date_debut'], (string) $data['date_fin']);
+            if ($datesError !== null) {
+                $this->sendError(409, $datesError);
+                return;
+            }
 
             // Valeur par défaut pour statut
             if (!isset($data['statut'])) {
@@ -237,6 +242,17 @@ class SessionController
                     $this->sendError(400, "La date de fin doit être égale ou postérieure à la date de début.");
                     return;
                 }
+            }
+            $currentSession = $this->model->find($id);
+            $datesError = $this->model->datesRefusal(
+                (int) ($data['id_annee'] ?? $currentSession['id_annee']),
+                (string) ($data['date_debut'] ?? $currentSession['date_debut']),
+                (string) ($data['date_fin'] ?? $currentSession['date_fin']),
+                $id
+            );
+            if ($datesError !== null) {
+                $this->sendError(409, $datesError);
+                return;
             }
 
             // Validation du statut si fourni

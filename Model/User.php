@@ -13,10 +13,25 @@ class User extends Model
         'nom', 'prenom', 'email', 'telephone', 'password', 'role_id', 'actif', 'last_login',
     ];
 
-    /** Crée un utilisateur en enregistrant le mot de passe tel que fourni. */
+    /** Crée un utilisateur ; le mot de passe est toujours enregistré haché. */
     public function create(array $data): int
     {
+        if (isset($data['password'])) {
+            $data['password'] = self::hashPassword((string) $data['password']);
+        }
         return parent::create($data);
+    }
+
+    /** Empreinte password_hash() ; une valeur déjà hachée est conservée telle quelle. */
+    public static function hashPassword(string $password): string
+    {
+        return password_get_info($password)['algo'] !== null ? $password : password_hash($password, PASSWORD_DEFAULT);
+    }
+
+    /** Téléphone comparable : sans espaces, tirets, points ni « + » (comme la colonne telephone_normalise). */
+    public static function normalizePhone(string $phone): string
+    {
+        return str_replace([' ', '-', '.', '+'], '', trim($phone));
     }
 
     /**
@@ -28,6 +43,8 @@ class User extends Model
         if (array_key_exists('password', $data)) {
             if ($data['password'] === '' || $data['password'] === null) {
                 unset($data['password']);
+            } else {
+                $data['password'] = self::hashPassword((string) $data['password']);
             }
         }
         return parent::update($id, $data);
@@ -58,6 +75,30 @@ class User extends Model
     }
 
     /**
+     * Ferme toutes les sessions d'un compte (nouveau mot de passe défini par un administrateur) :
+     * jetons de renouvellement révoqués, jetons d'accès invalidés par la version du compte.
+     */
+    public function revokeSessions(int $id): void
+    {
+        require_once __DIR__ . '/RefreshToken.php';
+        (new RefreshToken())->revokeAllForUser($id, 'mot_de_passe');
+        $this->db->prepare("UPDATE {$this->table} SET token_version = token_version + 1 WHERE id = :id")->execute(['id' => $id]);
+    }
+
+    /** Compte utilisant ce numéro, quelle que soit sa présentation (espaces, tirets…). */
+    public function findByPhone(string $phone): ?array
+    {
+        $normalized = self::normalizePhone($phone);
+        if ($normalized === '') {
+            return null;
+        }
+        return $this->fetchOne(
+            "SELECT id, nom, prenom FROM {$this->table} WHERE telephone_normalise = :phone LIMIT 1",
+            ['phone' => $normalized]
+        );
+    }
+
+    /**
      * Authentifie un utilisateur par email ou téléphone + mot de passe.
      * @return array|null L'utilisateur (sans le hash) si succès, null sinon.
      */
@@ -67,20 +108,15 @@ class User extends Model
             "SELECT u.*, r.code AS role_code, r.nom AS role_nom
              FROM {$this->table} u
              JOIN roles r ON r.id = u.role_id
-             WHERE u.email = :email OR u.telephone = :telephone
+             WHERE u.email = :email OR u.telephone_normalise = :telephone
              LIMIT 1",
-            ['email' => $identifier, 'telephone' => $identifier]
+            ['email' => mb_strtolower($identifier), 'telephone' => self::normalizePhone($identifier)]
         );
 
-        if ($user === null || !(bool) $user['actif']) {
+        if ($user === null || !(bool) $user['actif'] || !password_verify($password, (string) $user['password'])) {
             return null;
         }
-        $storedPassword = (string) $user['password'];
-        if (!password_verify($password, $storedPassword)) {
-            if (!hash_equals($storedPassword, $password)) {
-                return null;
-            }
-            // Ancien mot de passe stocké en clair : il est haché dès cette connexion réussie.
+        if (password_needs_rehash((string) $user['password'], PASSWORD_DEFAULT)) {
             $this->db->prepare("UPDATE {$this->table} SET password = :hash WHERE id = :id")
                 ->execute(['hash' => password_hash($password, PASSWORD_DEFAULT), 'id' => (int) $user['id']]);
         }

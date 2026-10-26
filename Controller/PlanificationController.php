@@ -112,7 +112,7 @@ class PlanificationController
                 $issues[] = ['type' => 'passage', 'id' => null, 'message' => $passage];
                 $passage = [$data['heure_debut'] ?? '08:00:00', $data['heure_fin'] ?? '12:00:00', false];
             }
-            $stmt = Database::getInstance()->prepare('SELECT g.id_session, f.id AS id_formateur FROM groupes g LEFT JOIN formateurs f ON f.id_salle = :salle WHERE g.id = :id');
+            $stmt = Database::getInstance()->prepare('SELECT g.id_session, f.id AS id_formateur FROM groupes g LEFT JOIN v_formateurs f ON f.id_salle = :salle WHERE g.id = :id');
             $stmt->execute(['id' => $groupId, 'salle' => (int) $data['id_salle']]);
             $ref = $stmt->fetch();
             if (!$ref) {

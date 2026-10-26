@@ -59,7 +59,7 @@ class RefreshToken extends Model
             $newRaw = $this->issue((int) $row['user_id'], $row['famille']);
             $this->db->prepare(
                 "UPDATE {$this->table}
-                 SET revoked_at = NOW(), motif_revocation = 'rotation', last_used_at = NOW(), remplace_par = :next
+                 SET revoked_at = NOW(), motif_revocation = 'rotation', remplace_par = :next
                  WHERE id = :id"
             )->execute(['next' => (int) $this->db->lastInsertId(), 'id' => (int) $row['id']]);
             return ['user_id' => (int) $row['user_id'], 'refresh_token' => $newRaw];

@@ -18,7 +18,7 @@ class ReglesEvaluation extends Model
     public const GENERAL_ID = 1;
 
     protected array $fillable = [
-        'libelle', 'id_niveau', 'nb_evaluations', 'moyenne_admission', 'taux_presence_min', 'passage_automatique',
+        'libelle', 'id_niveau', 'nb_evaluations', 'moyenne_admission', 'taux_presence_min',
     ];
 
     /** Règle applicable : celle du niveau si elle existe, sinon la règle générale. */
@@ -174,7 +174,6 @@ class ReglesEvaluation extends Model
             'nb_evaluations' => (int) $row['nb_evaluations'],
             'moyenne_admission' => (float) $row['moyenne_admission'],
             'taux_presence_min' => (float) $row['taux_presence_min'],
-            'passage_automatique' => (bool) $row['passage_automatique'],
         ];
     }
 
@@ -212,7 +211,6 @@ class ReglesEvaluation extends Model
             'nb_evaluations' => $nb,
             'moyenne_admission' => round((float) $moyenne, 2),
             'taux_presence_min' => round((float) $presence, 2),
-            'passage_automatique' => 0, // les passages de niveau sont toujours approuvés manuellement
         ];
     }
 

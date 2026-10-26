@@ -9,7 +9,7 @@
 --    1 session « Débutant » avec 1 groupe, 1 salle, 1 formateur, 3 évaluations
 --    4 auditeurs : 3 inscrits (Diallo, Bah, Sow), 1 sans inscription (Camara)
 --    notes : Diallo 16/20 partout, Bah 8/20 partout, Sow seulement l'évaluation 1
---    3 rôles : admin, secrétaire (sans droit de passage), approbateur (avec)
+--    4 rôles : admin, secrétaire (sans droit de passage), approbateur (avec), formateur (compte de Fatou Camara)
 --
 --  Les identifiants sont fixes : les tests s'appuient dessus.
 -- =====================================================================
@@ -47,8 +47,9 @@ INSERT INTO groupe_passages (id_groupe, jour_semaine, heure_debut, heure_fin, or
 INSERT INTO salles (id, code, libelle, capacite) VALUES
   (1, 'S01', 'Salle 1', 30);
 
-INSERT INTO formateurs (id, matricule, nom, prenom, password, id_salle) VALUES
-  (1, 'FOR-T-001', 'Camara', 'Fatou', 'mot-de-passe-factice', 1);
+-- Un formateur = un compte (users, id 4 ci-dessous) + sa fiche (matricule, salle).
+INSERT INTO formateurs (id, user_id, matricule, id_salle) VALUES
+  (1, 4, 'FOR-T-001', 1);
 
 INSERT INTO emplois_du_temps (id, id_annee, id_session, id_formateur, id_groupe, id_salle, jour_semaine, heure_debut, heure_fin) VALUES
   (1, 1, 1, 1, 1, 1, 1, '08:00:00', '12:00:00');
@@ -88,8 +89,8 @@ INSERT INTO notes (id_evaluation, id_parametre, id_inscription, note) VALUES
   (1, 1, 3, 12), (1, 2, 3, 12);
 
 -- Règles et barème d'appréciation ----------------------------------------
-INSERT INTO regles_evaluation (id, libelle, id_niveau, nb_evaluations, moyenne_admission, taux_presence_min, passage_automatique) VALUES
-  (1, 'Règle générale', NULL, 3, 2.00, 0.00, 0);
+INSERT INTO regles_evaluation (id, libelle, id_niveau, nb_evaluations, moyenne_admission, taux_presence_min) VALUES
+  (1, 'Règle générale', NULL, 3, 2.00, 0.00);
 
 INSERT INTO baremes_appreciation (note, libelle, seuil_min) VALUES
   (1, 'Insuffisant', 0.00), (2, 'Passable', 2.00), (3, 'Bien', 2.75), (4, 'Très bien', 3.50);
@@ -98,12 +99,15 @@ INSERT INTO baremes_appreciation (note, libelle, seuil_min) VALUES
 INSERT INTO roles (id, code, nom) VALUES
   (1, 'admin', 'Administrateur'),
   (2, 'secretaire', 'Secrétaire'),
-  (3, 'approbateur', 'Approbateur de passages');
+  (3, 'approbateur', 'Approbateur de passages'),
+  (4, 'formateur', 'Formateur');
 
-INSERT INTO users (id, nom, prenom, email, password, role_id, actif) VALUES
-  (1, 'Admin', 'Test', 'admin@test.local', 'mot-de-passe-factice', 1, 1),
-  (2, 'Secretaire', 'Test', 'secretaire@test.local', 'mot-de-passe-factice', 2, 1),
-  (3, 'Approbateur', 'Test', 'approbateur@test.local', 'mot-de-passe-factice', 3, 1);
+-- Mot de passe de tous les comptes : « mot-de-passe-factice » (haché, comme en production).
+INSERT INTO users (id, nom, prenom, email, telephone, password, role_id, actif) VALUES
+  (1, 'Admin', 'Test', 'admin@test.local', NULL, '$2y$10$3ema1LCrM6M4pYJsSTUGh.VBbTdW1McwRS5q2HIbGy3Fi0EKkiNna', 1, 1),
+  (2, 'Secretaire', 'Test', 'secretaire@test.local', '620 00 00 02', '$2y$10$3ema1LCrM6M4pYJsSTUGh.VBbTdW1McwRS5q2HIbGy3Fi0EKkiNna', 2, 1),
+  (3, 'Approbateur', 'Test', 'approbateur@test.local', NULL, '$2y$10$3ema1LCrM6M4pYJsSTUGh.VBbTdW1McwRS5q2HIbGy3Fi0EKkiNna', 3, 1),
+  (4, 'Camara', 'Fatou', 'fatou.camara@test.local', NULL, '$2y$10$3ema1LCrM6M4pYJsSTUGh.VBbTdW1McwRS5q2HIbGy3Fi0EKkiNna', 4, 1);
 
 INSERT INTO role_permissions (role_id, module_code, action_code) VALUES
   (2, 'evaluations', 'read'), (2, 'auditeurs', 'read'), (2, 'auditeurs', 'create'),

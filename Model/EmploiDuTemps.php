@@ -113,7 +113,7 @@ class EmploiDuTemps extends Model
                     sa.statut AS salle_statut, sa.capacite AS salle_capacite
              FROM groupes g
              JOIN sessions s ON s.id = g.id_session
-             JOIN formateurs f ON f.id = :formateur_id
+             JOIN v_formateurs f ON f.id = :formateur_id
              JOIN salles sa ON sa.id = :salle_id
              WHERE g.id = :groupe_id AND s.id_annee = :annee_id
              LIMIT 1"
@@ -230,7 +230,7 @@ class EmploiDuTemps extends Model
                 FROM {$this->table} e
                 JOIN groupes g    ON g.id  = e.id_groupe
                 JOIN salles sa    ON sa.id = e.id_salle
-                JOIN formateurs f ON f.id  = e.id_formateur
+                JOIN v_formateurs f ON f.id  = e.id_formateur
                 JOIN sessions s   ON s.id  = g.id_session AND s.id_annee = e.id_annee
                 JOIN types_formations tf ON tf.id = s.id_type_formation
                 JOIN annees_scolaires a ON a.id = e.id_annee";

@@ -43,6 +43,34 @@ class Session extends Model
         );
     }
 
+    /**
+     * Les dates d'une session doivent rester dans son année scolaire et contenir ses évaluations.
+     * @return string|null message de refus
+     */
+    public function datesRefusal(int $idAnnee, string $debut, string $fin, ?int $sessionId = null): ?string
+    {
+        $year = $this->fetchOne('SELECT libelle, date_debut, date_fin FROM annees_scolaires WHERE id = :id', ['id' => $idAnnee]);
+        if ($year === null) {
+            return 'L’année scolaire sélectionnée est introuvable.';
+        }
+        if ($debut < $year['date_debut'] || $fin > $year['date_fin']) {
+            return sprintf(
+                'Les dates de la session doivent être comprises dans l’année scolaire « %s » (du %s au %s). Prolongez l’année si nécessaire.',
+                $year['libelle'], $year['date_debut'], $year['date_fin']
+            );
+        }
+        if ($sessionId !== null) {
+            $outside = (int) $this->fetchColumn(
+                'SELECT COUNT(*) FROM evaluations WHERE id_session = :id AND date_evaluation NOT BETWEEN :debut AND :fin',
+                ['id' => $sessionId, 'debut' => $debut, 'fin' => $fin]
+            );
+            if ($outside > 0) {
+                return "{$outside} évaluation(s) de cette session tomberaient hors de ses nouvelles dates : déplacez-les d’abord.";
+            }
+        }
+        return null;
+    }
+
     public function getGroupCount(int $id): int
     {
         return (int) $this->fetchColumn(

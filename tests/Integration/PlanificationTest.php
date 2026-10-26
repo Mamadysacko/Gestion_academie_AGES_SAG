@@ -13,10 +13,11 @@ final class PlanificationTest extends ControllerTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        // Trois salles de plus, chacune avec son formateur titulaire.
+        // Trois salles de plus, chacune avec son formateur titulaire (un compte + sa fiche).
         foreach ([2, 3, 4] as $n) {
             $this->scalar("INSERT INTO salles (id, code, libelle, capacite) VALUES ({$n}, 'S0{$n}', 'Salle {$n}', 20)");
-            $this->scalar("INSERT INTO formateurs (id, matricule, nom, prenom, password, id_salle) VALUES ({$n}, 'FOR-T-00{$n}', 'Formateur', 'N{$n}', 'x', {$n})");
+            $this->scalar("INSERT INTO users (id, nom, prenom, email, password, role_id) VALUES (1{$n}, 'Formateur', 'N{$n}', 'formateur{$n}@test.local', 'x', 4)");
+            $this->scalar("INSERT INTO formateurs (id, user_id, matricule, id_salle) VALUES ({$n}, 1{$n}, 'FOR-T-00{$n}', {$n})");
         }
     }
 
@@ -217,8 +218,8 @@ final class PlanificationTest extends ControllerTestCase
 
     public function testUneNouvelleSessionRepritAutomatiquementLaConfigurationPrecedente(): void
     {
-        $this->scalar("UPDATE sessions SET date_fin = '2026-10-30' WHERE id = 1");
-        $created = $this->createSession(['code' => 'S1-BIS', 'libelle' => 'Débutant 2', 'date_debut' => '2026-11-02', 'date_fin' => '2026-12-18', 'id_niveau' => 1]);
+        // Nouvelle session juste après la session 1 (qui se termine le 18/12/2026) : les périodes ne se recoupent pas.
+        $created = $this->createSession(['code' => 'S1-BIS', 'libelle' => 'Débutant 2', 'date_debut' => '2026-12-21', 'date_fin' => '2027-01-08', 'id_niveau' => 1]);
 
         $reprise = $created['reprise'];
         self::assertSame(1, $reprise['session_source']['id'], 'Dernière session de la même formation commencée avant');

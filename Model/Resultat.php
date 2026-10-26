@@ -76,7 +76,7 @@ class Resultat extends Model
              JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
              JOIN groupes g ON g.id = e.id_groupe
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              WHERE {$where}
              ORDER BY g.code, sa.code, a.nom, a.prenom",
             $params

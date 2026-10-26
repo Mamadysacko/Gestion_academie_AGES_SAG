@@ -1,5 +1,5 @@
 -- =====================================================================
---  Structure de la base academie_langues3 (MySQL 8) — générée le 2026-10-25 18:54
+--  Structure de la base academie_langues3 (MySQL 8) — générée le 2026-10-25 19:32
 --  Schéma seul (sans données). Lu par tools/featuresPlugin.js (centre d'aide).
 --  Pour une nouvelle installation :  mysql -uroot -p < "DB Gestion Academie.sql"
 --  Régénération : php database/export_schema.php
@@ -102,14 +102,13 @@ CREATE TABLE `emplois_du_temps` (
   UNIQUE KEY `uk_edt_session_salle_creneau` (`id_session`,`id_salle`,`jour_semaine`,`heure_debut`),
   UNIQUE KEY `uk_edt_session_formateur_creneau` (`id_session`,`id_formateur`,`jour_semaine`,`heure_debut`),
   KEY `idx_edt_annee` (`id_annee`),
-  KEY `idx_edt_groupe` (`id_groupe`),
-  KEY `idx_edt_salle` (`id_salle`),
   KEY `idx_edt_formateur` (`id_formateur`),
   KEY `idx_edt_jour` (`jour_semaine`),
-  KEY `idx_edt_session` (`id_session`),
   KEY `idx_edt_salle_jour` (`id_salle`,`jour_semaine`),
+  KEY `idx_edt_generation` (`id_generation`),
   CONSTRAINT `fk_edt_annee` FOREIGN KEY (`id_annee`) REFERENCES `annees_scolaires` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_edt_formateur` FOREIGN KEY (`id_formateur`) REFERENCES `formateurs` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_edt_generation` FOREIGN KEY (`id_generation`) REFERENCES `planification_generations` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_edt_groupe` FOREIGN KEY (`id_groupe`) REFERENCES `groupes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_edt_salle` FOREIGN KEY (`id_salle`) REFERENCES `salles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_edt_session` FOREIGN KEY (`id_session`) REFERENCES `sessions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -145,7 +144,6 @@ CREATE TABLE `evaluations` (
   `date_evaluation` date NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_evaluations_session_numero` (`id_session`,`numero`),
-  KEY `idx_evaluations_session` (`id_session`),
   CONSTRAINT `fk_evaluations_session` FOREIGN KEY (`id_session`) REFERENCES `sessions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `chk_evaluations_numero` CHECK ((`numero` between 1 and 9))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -157,24 +155,17 @@ CREATE TABLE `evaluations` (
 DROP TABLE IF EXISTS `formateurs`;
 CREATE TABLE `formateurs` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `user_id` int unsigned DEFAULT NULL,
+  `user_id` int unsigned NOT NULL,
   `matricule` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `nom` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `prenom` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `telephone` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `email` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `id_salle` int unsigned DEFAULT NULL,
-  `actif` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_formateurs_matricule` (`matricule`),
-  UNIQUE KEY `uk_formateurs_email` (`email`),
+  UNIQUE KEY `uk_formateurs_user` (`user_id`),
   UNIQUE KEY `uk_formateurs_salle` (`id_salle`),
-  KEY `idx_formateurs_user` (`user_id`),
   CONSTRAINT `fk_formateurs_salle` FOREIGN KEY (`id_salle`) REFERENCES `salles` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_formateurs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `fk_formateurs_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -257,7 +248,6 @@ CREATE TABLE `groupes` (
   `statut` tinyint(1) NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_groupes_session_code` (`id_session`,`code`),
-  KEY `idx_groupes_session` (`id_session`),
   KEY `idx_groupes_jour` (`jour_semaine`),
   CONSTRAINT `fk_groupes_session` FOREIGN KEY (`id_session`) REFERENCES `sessions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `chk_groupes_capacite` CHECK (((`capacite` is null) or (`capacite` > 0))),
@@ -281,9 +271,7 @@ CREATE TABLE `inscriptions` (
   `statut` enum('active','terminee','abandonnee','annulee') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_inscription_auditeur_edt` (`id_auditeur`,`id_emploi_du_temps`),
-  KEY `idx_inscriptions_auditeur` (`id_auditeur`),
   KEY `idx_inscriptions_departement` (`id_departement`),
-  KEY `idx_inscriptions_edt` (`id_emploi_du_temps`),
   KEY `idx_inscriptions_annee` (`id_annee`),
   KEY `idx_inscriptions_session` (`id_session`),
   KEY `idx_inscriptions_edt_statut` (`id_emploi_du_temps`,`statut`),
@@ -441,14 +429,12 @@ CREATE TABLE `presences` (
   `id_emploi_du_temps` int unsigned DEFAULT NULL,
   `id_formateur` int unsigned NOT NULL,
   `date_presence` date NOT NULL,
-  `jour_semaine_presence` varchar(10) COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS ((case dayofweek(`date_presence`) when 2 then _utf8mb4'lundi' when 3 then _utf8mb4'mardi' when 4 then _utf8mb4'mercredi' when 5 then _utf8mb4'jeudi' when 6 then _utf8mb4'vendredi' else NULL end)) STORED,
   `statut` enum('present','absent','permissionnaire','malade','conge') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'present',
   `conge_date_debut` date DEFAULT NULL,
   `conge_date_fin` date DEFAULT NULL,
   `observation` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_presence_inscription_date` (`id_inscription`,`date_presence`),
-  KEY `idx_presences_edt` (`id_emploi_du_temps`),
   KEY `idx_presences_formateur` (`id_formateur`),
   KEY `idx_presences_date` (`date_presence`),
   KEY `idx_presences_edt_date` (`id_emploi_du_temps`,`date_presence`),
@@ -470,7 +456,6 @@ CREATE TABLE `refresh_tokens` (
   `token_hash` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'SHA-256 du jeton (le jeton brut n''est jamais stocké)',
   `expires_at` datetime NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `last_used_at` datetime DEFAULT NULL,
   `revoked_at` datetime DEFAULT NULL,
   `motif_revocation` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `remplace_par` bigint unsigned DEFAULT NULL,
@@ -481,6 +466,8 @@ CREATE TABLE `refresh_tokens` (
   KEY `idx_refresh_user` (`user_id`),
   KEY `idx_refresh_famille` (`famille`),
   KEY `idx_refresh_expiration` (`expires_at`),
+  KEY `idx_refresh_remplace` (`remplace_par`),
+  CONSTRAINT `fk_refresh_remplace` FOREIGN KEY (`remplace_par`) REFERENCES `refresh_tokens` (`id`) ON DELETE SET NULL,
   CONSTRAINT `fk_refresh_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -496,7 +483,6 @@ CREATE TABLE `regles_evaluation` (
   `nb_evaluations` tinyint unsigned NOT NULL DEFAULT '3',
   `moyenne_admission` decimal(4,2) NOT NULL DEFAULT '2.00',
   `taux_presence_min` decimal(5,2) NOT NULL DEFAULT '0.00',
-  `passage_automatique` tinyint(1) NOT NULL DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_regles_niveau` (`id_niveau`),
   CONSTRAINT `fk_regles_niveau` FOREIGN KEY (`id_niveau`) REFERENCES `niveaux` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -576,13 +562,12 @@ CREATE TABLE `sessions` (
   `date_fin` date NOT NULL,
   `statut` enum('planifiee','ouverte','en_cours','terminee','annulee') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'planifiee',
   `id_session_source` int unsigned DEFAULT NULL COMMENT 'Session dont la configuration a été reprise',
-  `passages_semaine` tinyint unsigned DEFAULT NULL,
+  `passages_semaine` tinyint unsigned GENERATED ALWAYS AS (cast(json_unquote(json_extract(`config_formation`,_utf8mb4'$.passages_semaine')) as unsigned)) STORED,
   `config_version` int unsigned DEFAULT NULL,
   `config_formation` json DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sessions_code` (`code`),
   UNIQUE KEY `uk_sessions_annee_type_libelle` (`id_annee`,`id_type_formation`,`libelle`),
-  KEY `idx_sessions_annee` (`id_annee`),
   KEY `idx_sessions_type` (`id_type_formation`),
   KEY `idx_sessions_niveau` (`id_niveau`),
   KEY `idx_sessions_source` (`id_session_source`),
@@ -616,14 +601,13 @@ CREATE TABLE `types_formations` (
   `passages_semaine` tinyint unsigned NOT NULL DEFAULT '1',
   `nb_groupes` tinyint unsigned NOT NULL DEFAULT '1',
   `salles_par_groupe` tinyint unsigned NOT NULL DEFAULT '1',
-  `jours_autorises` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1,2,3,4,5',
+  `jours_autorises` set('1','2','3','4','5') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1,2,3,4,5',
   `heure_debut` time NOT NULL DEFAULT '08:00:00',
   `heure_fin` time NOT NULL DEFAULT '12:00:00',
   `creneaux` json DEFAULT NULL COMMENT 'Plusieurs créneaux par jour : [{"debut":"08:00","fin":"12:00"}, …] ; NULL = heure_debut/heure_fin',
   `espacer_passages` tinyint(1) NOT NULL DEFAULT '1' COMMENT 'Préférer des jours non consécutifs pour les passages d''un groupe',
   `couleur` varchar(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `config_version` int unsigned NOT NULL DEFAULT '1',
-  `config_updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_types_formations_libelle` (`libelle`),
   CONSTRAINT `chk_tf_groupes` CHECK ((`nb_groupes` between 1 and 50)),
@@ -643,6 +627,7 @@ CREATE TABLE `users` (
   `prenom` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `telephone` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `telephone_normalise` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci GENERATED ALWAYS AS (nullif(replace(replace(replace(replace(`telephone`,_utf8mb4' ',_utf8mb4''),_utf8mb4'-',_utf8mb4''),_utf8mb4'.',_utf8mb4''),_utf8mb4'+',_utf8mb4''),_utf8mb4'')) STORED,
   `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `role_id` int unsigned NOT NULL,
   `actif` tinyint(1) NOT NULL DEFAULT '1',
@@ -652,9 +637,87 @@ CREATE TABLE `users` (
   `token_version` int unsigned NOT NULL DEFAULT '0' COMMENT 'Incrémenté pour invalider immédiatement tous les jetons d''accès du compte',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_email` (`email`),
+  UNIQUE KEY `uk_users_telephone` (`telephone_normalise`),
   KEY `idx_users_role` (`role_id`),
   KEY `idx_users_actif` (`actif`),
   CONSTRAINT `fk_users_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- View structure for view `v_formateurs`
+--
+
+DROP VIEW IF EXISTS `v_formateurs`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY INVOKER VIEW `v_formateurs` AS select `f`.`id` AS `id`,`f`.`user_id` AS `user_id`,`f`.`matricule` AS `matricule`,`u`.`nom` AS `nom`,`u`.`prenom` AS `prenom`,`u`.`telephone` AS `telephone`,`u`.`email` AS `email`,`f`.`id_salle` AS `id_salle`,`u`.`actif` AS `actif`,`f`.`created_at` AS `created_at`,`f`.`updated_at` AS `updated_at` from (`formateurs` `f` join `users` `u` on((`u`.`id` = `f`.`user_id`)));
+
+--
+-- Déclencheurs de cohérence
+--
+
+DELIMITER $$
+
+DROP TRIGGER IF EXISTS `trg_annee_dates_upd`$$
+CREATE TRIGGER `trg_annee_dates_upd` BEFORE UPDATE ON `annees_scolaires` FOR EACH ROW BEGIN
+  IF EXISTS (SELECT 1 FROM sessions s WHERE s.id_annee = NEW.id AND (s.date_debut < NEW.date_debut OR s.date_fin > NEW.date_fin)) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Une session de cette année sortirait de ses nouvelles dates : modifiez d’abord la session.';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS `trg_edt_coherence_ins`$$
+CREATE TRIGGER `trg_edt_coherence_ins` BEFORE INSERT ON `emplois_du_temps` FOR EACH ROW BEGIN
+  SET NEW.id_session = (SELECT g.id_session FROM groupes g WHERE g.id = NEW.id_groupe);
+  SET NEW.id_annee = (SELECT s.id_annee FROM sessions s WHERE s.id = NEW.id_session);
+END$$
+
+DROP TRIGGER IF EXISTS `trg_edt_coherence_upd`$$
+CREATE TRIGGER `trg_edt_coherence_upd` BEFORE UPDATE ON `emplois_du_temps` FOR EACH ROW BEGIN
+  SET NEW.id_session = (SELECT g.id_session FROM groupes g WHERE g.id = NEW.id_groupe);
+  SET NEW.id_annee = (SELECT s.id_annee FROM sessions s WHERE s.id = NEW.id_session);
+END$$
+
+DROP TRIGGER IF EXISTS `trg_evaluation_date_ins`$$
+CREATE TRIGGER `trg_evaluation_date_ins` BEFORE INSERT ON `evaluations` FOR EACH ROW BEGIN
+  IF EXISTS (SELECT 1 FROM sessions s WHERE s.id = NEW.id_session AND NEW.date_evaluation NOT BETWEEN s.date_debut AND s.date_fin) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La date de l’évaluation doit être comprise dans la période de sa session.';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS `trg_evaluation_date_upd`$$
+CREATE TRIGGER `trg_evaluation_date_upd` BEFORE UPDATE ON `evaluations` FOR EACH ROW BEGIN
+  IF EXISTS (SELECT 1 FROM sessions s WHERE s.id = NEW.id_session AND NEW.date_evaluation NOT BETWEEN s.date_debut AND s.date_fin) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'La date de l’évaluation doit être comprise dans la période de sa session.';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS `trg_inscription_coherence_ins`$$
+CREATE TRIGGER `trg_inscription_coherence_ins` BEFORE INSERT ON `inscriptions` FOR EACH ROW BEGIN
+  SET NEW.id_session = (SELECT e.id_session FROM emplois_du_temps e WHERE e.id = NEW.id_emploi_du_temps);
+  SET NEW.id_annee = (SELECT e.id_annee FROM emplois_du_temps e WHERE e.id = NEW.id_emploi_du_temps);
+END$$
+
+DROP TRIGGER IF EXISTS `trg_inscription_coherence_upd`$$
+CREATE TRIGGER `trg_inscription_coherence_upd` BEFORE UPDATE ON `inscriptions` FOR EACH ROW BEGIN
+  SET NEW.id_session = (SELECT e.id_session FROM emplois_du_temps e WHERE e.id = NEW.id_emploi_du_temps);
+  SET NEW.id_annee = (SELECT e.id_annee FROM emplois_du_temps e WHERE e.id = NEW.id_emploi_du_temps);
+END$$
+
+DROP TRIGGER IF EXISTS `trg_session_dates_ins`$$
+CREATE TRIGGER `trg_session_dates_ins` BEFORE INSERT ON `sessions` FOR EACH ROW BEGIN
+  IF EXISTS (SELECT 1 FROM annees_scolaires a WHERE a.id = NEW.id_annee AND (NEW.date_debut < a.date_debut OR NEW.date_fin > a.date_fin)) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Les dates de la session doivent être comprises dans celles de son année scolaire.';
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS `trg_session_dates_upd`$$
+CREATE TRIGGER `trg_session_dates_upd` BEFORE UPDATE ON `sessions` FOR EACH ROW BEGIN
+  IF EXISTS (SELECT 1 FROM annees_scolaires a WHERE a.id = NEW.id_annee AND (NEW.date_debut < a.date_debut OR NEW.date_fin > a.date_fin)) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Les dates de la session doivent être comprises dans celles de son année scolaire.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM evaluations e WHERE e.id_session = NEW.id AND e.date_evaluation NOT BETWEEN NEW.date_debut AND NEW.date_fin) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Des évaluations de cette session tomberaient hors de ses nouvelles dates : déplacez-les d’abord.';
+  END IF;
+END$$
+
+DELIMITER ;
 
 SET FOREIGN_KEY_CHECKS = 1;

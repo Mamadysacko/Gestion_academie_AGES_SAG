@@ -245,7 +245,7 @@ class Rapport extends Model
         $one('SELECT libelle FROM niveaux WHERE id = :id', 'id_niveau', 'Niveau');
         $one("SELECT CONCAT(code, ' · ', libelle) FROM groupes WHERE id = :id", 'id_groupe', 'Groupe');
         $one("SELECT CONCAT(code, ' · ', libelle) FROM salles WHERE id = :id", 'id_salle', 'Salle');
-        $one("SELECT CONCAT(prenom, ' ', nom) FROM formateurs WHERE id = :id", 'id_formateur', 'Formateur');
+        $one("SELECT CONCAT(prenom, ' ', nom) FROM v_formateurs WHERE id = :id", 'id_formateur', 'Formateur');
         $one("SELECT CONCAT(code, ' · ', libelle) FROM departements WHERE id = :id", 'id_departement', 'Département');
         $one('SELECT libelle FROM types_employes WHERE id = :id', 'id_type_employe', 'Type d’employeur');
         if (isset($f['jour_semaine'])) {
@@ -269,7 +269,7 @@ class Rapport extends Model
              JOIN niveaux n ON n.id = s.id_niveau
              JOIN annees_scolaires an ON an.id = i.id_annee
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              LEFT JOIN types_employes te ON te.id = a.id_type_employe LEFT JOIN positions po ON po.id = a.id_position";
 
     private function insFrom(): string
@@ -327,7 +327,7 @@ class Rapport extends Model
              JOIN niveaux n ON n.id = s.id_niveau
              JOIN annees_scolaires an ON an.id = e.id_annee
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur';
+             JOIN v_formateurs f ON f.id = e.id_formateur';
 
     /* ------------------------------------------------------------------
      | Fabrication des colonnes / sections
@@ -1142,7 +1142,7 @@ class Rapport extends Model
             "SELECT CONCAT(fp.prenom, ' ', fp.nom) AS libelle, fp.matricule AS code, COUNT(*) AS total, SUM(p.statut = 'present') AS present, SUM(p.statut = 'absent') AS absent,
                     SUM(p.statut = 'permissionnaire') AS permissionnaire, SUM(p.statut = 'malade') AS malade, SUM(p.statut = 'conge') AS conge,
                     MIN(p.date_presence) AS premiere, MAX(p.date_presence) AS derniere, COUNT(DISTINCT p.date_presence) AS jours
-             {$this->presFrom()} JOIN formateurs fp ON fp.id = p.id_formateur
+             {$this->presFrom()} JOIN v_formateurs fp ON fp.id = p.id_formateur
              WHERE 1 = 1 {$where} GROUP BY fp.id, fp.prenom, fp.nom, fp.matricule ORDER BY total DESC",
             $params
         );
@@ -1174,7 +1174,7 @@ class Rapport extends Model
              JOIN sessions s ON s.id = ev.id_session
              JOIN inscriptions i ON i.id_session = s.id AND i.statut IN ('active','terminee')
              JOIN emplois_du_temps e ON e.id = i.id_emploi_du_temps
-             JOIN formateurs fo ON fo.id = e.id_formateur
+             JOIN v_formateurs fo ON fo.id = e.id_formateur
              WHERE 1 = 1 {$extra}
              GROUP BY fo.id, fo.prenom, fo.nom, s.id, s.code, ev.id, ev.numero, ev.libelle
              ORDER BY fo.nom, s.code, ev.numero",
@@ -1298,7 +1298,7 @@ class Rapport extends Model
     {
         $rows = $this->edtRows($f);
         $titulaires = [];
-        foreach ($this->fetchAll('SELECT id, id_salle, CONCAT(prenom, \' \', nom) AS nom FROM formateurs WHERE id_salle IS NOT NULL') as $t) {
+        foreach ($this->fetchAll('SELECT id, id_salle, CONCAT(prenom, \' \', nom) AS nom FROM v_formateurs WHERE id_salle IS NOT NULL') as $t) {
             $titulaires[(int) $t['id_salle']] = $t;
         }
         $lines = [];
@@ -1384,7 +1384,7 @@ class Rapport extends Model
         $today = date('Y-m-d');
         $rows = [
             ['Auditeurs enregistrés', (int) $this->fetchColumn('SELECT COUNT(*) FROM auditeurs')], ['Auditeurs inscrits (périmètre)', $this->num($k['auditeurs'])], ['Inscriptions actives', $this->num($k['actives'])],
-            ['Formateurs actifs', (int) $this->fetchColumn('SELECT COUNT(*) FROM formateurs WHERE actif = 1')], ['Salles disponibles / total', $this->fetchColumn("SELECT CONCAT(SUM(statut = 'disponible'), ' / ', COUNT(*)) FROM salles")],
+            ['Formateurs actifs', (int) $this->fetchColumn('SELECT COUNT(*) FROM v_formateurs WHERE actif = 1')], ['Salles disponibles / total', $this->fetchColumn("SELECT CONCAT(SUM(statut = 'disponible'), ' / ', COUNT(*)) FROM salles")],
             ['Groupes actifs', (int) $this->fetchColumn('SELECT COUNT(*) FROM groupes WHERE statut = 1')], ['Sessions en cours', (int) $this->fetchColumn("SELECT COUNT(*) FROM sessions WHERE statut IN ('ouverte','en_cours') AND :d BETWEEN date_debut AND date_fin", ['d' => $today])],
             ['Évaluations réalisées', (int) $this->fetchColumn('SELECT COUNT(*) FROM evaluations WHERE date_evaluation <= :d', ['d' => $today])], ['Pointages sur la période', $pt],
             ['Taux de présence', $this->pct($pp, $pt) === null ? '—' : $this->pct($pp, $pt) . ' %'], ['Moyenne générale', $a['moyenne'] === null ? '—' : $a['moyenne'] . ' /4'],

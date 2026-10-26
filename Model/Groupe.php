@@ -105,7 +105,7 @@ class Groupe extends Model
                       WHERE e2.id_groupe = e.id_groupe AND e2.id_salle = e.id_salle AND i.statut = 'active') AS inscrits
              FROM emplois_du_temps e
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              WHERE e.id_groupe = :id
                AND e.id = (SELECT e4.id FROM emplois_du_temps e4 WHERE e4.id_groupe = e.id_groupe AND e4.id_salle = e.id_salle
                            ORDER BY e4.statut DESC, e4.jour_semaine, e4.id LIMIT 1)

@@ -3,8 +3,7 @@
  * Modèle Presence (table : presences)
  *
  * Une présence par inscription et par date (clé unique id_inscription + date_presence).
- * La colonne jour_semaine_presence est générée automatiquement par MySQL :
- * elle ne doit jamais être insérée ni mise à jour.
+ * Le jour de la semaine se déduit de date_presence ; seuls les jours de passage du groupe sont acceptés.
  */
 
 require_once __DIR__ . '/Model.php';
@@ -69,7 +68,7 @@ class Presence extends Model
              JOIN sessions s ON s.id = g.id_session
              JOIN niveaux n ON n.id = s.id_niveau
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = p.id_formateur
+             JOIN v_formateurs f ON f.id = p.id_formateur
              ORDER BY p.date_presence DESC, a.nom, a.prenom"
         );
     }
@@ -199,7 +198,7 @@ class Presence extends Model
              JOIN niveaux n ON n.id = s.id_niveau
              JOIN annees_scolaires an ON an.id = i.id_annee
              JOIN salles sa ON sa.id = e.id_salle
-             JOIN formateurs f ON f.id = e.id_formateur
+             JOIN v_formateurs f ON f.id = e.id_formateur
              LEFT JOIN presences p ON p.id_inscription = i.id AND p.date_presence = :date4
              WHERE i.statut = 'active' AND e.statut = 1 AND g.statut = 1
                AND :date1 BETWEEN s.date_debut AND s.date_fin

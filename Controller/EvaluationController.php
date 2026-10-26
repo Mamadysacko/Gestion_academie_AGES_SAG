@@ -83,6 +83,11 @@ class EvaluationController
                 $this->sendError(400, $numberError);
                 return;
             }
+            $dateError = $this->dateOutsideSession((int) $data['id_session'], (string) $data['date_evaluation']);
+            if ($dateError !== null) {
+                $this->sendError(409, $dateError);
+                return;
+            }
 
             $id = $this->model->create($data);
 
@@ -130,6 +135,14 @@ class EvaluationController
                     return;
                 }
             }
+            $dateError = $this->dateOutsideSession(
+                (int) ($data['id_session'] ?? $current['id_session']),
+                (string) ($data['date_evaluation'] ?? $current['date_evaluation'])
+            );
+            if ($dateError !== null) {
+                $this->sendError(409, $dateError);
+                return;
+            }
             $success = $this->model->update($id, $data);
 
             if ($success) {
@@ -169,6 +182,18 @@ class EvaluationController
      * Numéro d'évaluation : 1 à N (règles), unique dans la session ; attribué automatiquement si absent.
      * @return string|null Message d'erreur.
      */
+    /** Une évaluation a lieu pendant sa session. @return string|null message de refus */
+    private function dateOutsideSession(int $idSession, string $date): ?string
+    {
+        $stmt = Database::getInstance()->prepare('SELECT date_debut, date_fin FROM sessions WHERE id = :id');
+        $stmt->execute(['id' => $idSession]);
+        $session = $stmt->fetch();
+        if ($session && ($date < $session['date_debut'] || $date > $session['date_fin'])) {
+            return "La date de l’évaluation doit être comprise dans la période de la session (du {$session['date_debut']} au {$session['date_fin']}).";
+        }
+        return null;
+    }
+
     private function resolveNumber(array &$data, int $idSession, ?int $excludeId = null): ?string
     {
         $max = (new ReglesEvaluation())->getRegles($this->model->niveauOfSession($idSession))['nb_evaluations'];
