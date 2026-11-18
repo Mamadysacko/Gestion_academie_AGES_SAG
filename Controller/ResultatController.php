@@ -12,6 +12,8 @@
 
 require_once __DIR__ . '/../Model/Resultat.php';
 require_once __DIR__ . '/../Model/ReglesEvaluation.php';
+require_once __DIR__ . '/../Model/Notification.php';
+require_once __DIR__ . '/../config/Database.php';
 
 class ResultatController
 {
@@ -60,6 +62,31 @@ class ResultatController
                 (string) ($data['decision'] ?? ''),
                 isset($data['observation']) ? (string) $data['observation'] : null
             );
+            // Notifications bulletin silencieuses
+            try {
+                $notifModel = new Notification();
+                $db = Database::getInstance();
+                // Récupérer le libellé de la session
+                $sessionRow = $db->prepare('SELECT libelle FROM sessions WHERE id = :id LIMIT 1');
+                $sessionRow->execute(['id' => $sessionId]);
+                $sessionLibelle = (string) ($sessionRow->fetchColumn() ?: "Session #{$sessionId}");
+                $inscIds = is_array($data['inscriptions'] ?? null) ? $data['inscriptions'] : [];
+                if (!empty($inscIds)) {
+                    $placeholders = implode(',', array_fill(0, count($inscIds), '?'));
+                    $uidStmt = $db->prepare(
+                        "SELECT u.id FROM users u JOIN auditeurs a ON a.user_id = u.id"
+                        . " JOIN inscriptions i ON i.id_auditeur = a.id"
+                        . " WHERE i.id IN ({$placeholders})"
+                    );
+                    $uidStmt->execute(array_values($inscIds));
+                    $userIds = $uidStmt->fetchAll(PDO::FETCH_COLUMN);
+                    foreach ($userIds as $uid) {
+                        $notifModel->createBulletinDisponible((int)$uid, $sessionLibelle);
+                    }
+                }
+            } catch (Throwable $notifErr) {
+                error_log('Notification bulletin échouée : ' . $notifErr->getMessage());
+            }
             $label = match ($result['decision']) {
                 'admis' => 'passent en classe supérieure (' . ($result['niveau_arrivee']['libelle'] ?? '') . ')',
                 'termine' => 'terminent la formation',

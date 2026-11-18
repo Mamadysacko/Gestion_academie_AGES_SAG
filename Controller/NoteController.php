@@ -4,6 +4,8 @@
  */
 
 require_once __DIR__ . '/../Model/Note.php';
+require_once __DIR__ . '/../Model/Notification.php';
+require_once __DIR__ . '/../config/Database.php';
 
 class NoteController
 {
@@ -181,6 +183,34 @@ class NoteController
             );
 
             if ($success) {
+                // Notification silencieuse : ne jamais faire échouer l'enregistrement de la note
+                try {
+                    $noteValue = isset($data['note']) && $data['note'] !== '' ? (float)$data['note'] : null;
+                    if ($noteValue !== null) {
+                        $db = Database::getInstance();
+                        // user_id de l'auditeur lié à l'inscription
+                        $userId = $db->prepare(
+                            'SELECT u.id FROM users u JOIN auditeurs a ON a.user_id = u.id'
+                            . ' JOIN inscriptions i ON i.id_auditeur = a.id'
+                            . ' WHERE i.id = :id LIMIT 1'
+                        );
+                        $userId->execute(['id' => (int)$data['id_inscription']]);
+                        $uid = $userId->fetchColumn();
+                        // libellé de l'évaluation
+                        $evalRow = $db->prepare('SELECT libelle FROM evaluations WHERE id = :id LIMIT 1');
+                        $evalRow->execute(['id' => (int)$data['id_evaluation']]);
+                        $evalLibelle = (string) ($evalRow->fetchColumn() ?: '');
+                        // barème du paramètre
+                        $baremeRow = $db->prepare('SELECT bareme FROM parametres WHERE id = :id LIMIT 1');
+                        $baremeRow->execute(['id' => (int)$data['id_parametre']]);
+                        $bareme = (float) ($baremeRow->fetchColumn() ?: 0);
+                        if ($uid && $evalLibelle) {
+                            (new Notification())->createNoteAdded((int)$uid, $evalLibelle, $noteValue, $bareme);
+                        }
+                    }
+                } catch (Throwable $notifErr) {
+                    error_log('Notification note échouée : ' . $notifErr->getMessage());
+                }
                 $this->sendResponse(200, [
                     'success' => true,
                     'message' => 'Note enregistrée avec succès.'

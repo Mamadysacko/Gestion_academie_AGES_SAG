@@ -68,6 +68,10 @@ if ($resource === 'evaluations') {
             $controller->getAll();
         } elseif ($param1 === 'session' && is_numeric($param2)) {
             $controller->getBySession((int)$param2);
+        } elseif (is_numeric($param1) && $param2 === 'fiche-notes' && $param3 === 'imprimer') {
+            (new FicheNotesController())->printFicheNotes((int)$param1);
+        } elseif (is_numeric($param1) && $param2 === 'fiche-notes') {
+            (new FicheNotesController())->getFicheNotes((int)$param1);
         } elseif (is_numeric($param1)) {
             $controller->getById((int)$param1);
         } else {

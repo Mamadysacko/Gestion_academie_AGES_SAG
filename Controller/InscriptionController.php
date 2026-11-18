@@ -289,6 +289,41 @@ class InscriptionController
         }
     }
 
+    /**
+     * GET /inscriptions/auditeur-search?q=terme
+     * Recherche d'auditeurs pour faciliter la sélection lors d'une inscription.
+     */
+    public function searchAuditeur(): void
+    {
+        try {
+            $q = trim((string) ($_GET['q'] ?? ''));
+            if (mb_strlen($q) < 2) {
+                $this->sendError(400, "Le terme de recherche doit contenir au moins 2 caractères.");
+                return;
+            }
+            $term = '%' . $q . '%';
+            $db   = Database::getInstance();
+            $stmt = $db->prepare(
+                "SELECT a.id, a.matricule, a.nom, a.prenom, a.telephone, a.email, a.user_id
+                 FROM auditeurs a
+                 WHERE LOWER(a.nom)       LIKE LOWER(:q)
+                    OR LOWER(a.prenom)    LIKE LOWER(:q)
+                    OR LOWER(a.matricule) LIKE LOWER(:q)
+                 ORDER BY a.nom, a.prenom
+                 LIMIT 20"
+            );
+            $stmt->execute([':q' => $term]);
+            $rows = $stmt->fetchAll();
+            $this->sendResponse(200, [
+                'success' => true,
+                'data'    => $rows,
+                'count'   => count($rows),
+            ]);
+        } catch (Exception $e) {
+            $this->sendError(500, 'Erreur lors de la recherche : ' . $e->getMessage());
+        }
+    }
+
     private function getJsonInput(): array
     {
         $json = file_get_contents('php://input');

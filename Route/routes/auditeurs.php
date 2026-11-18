@@ -95,6 +95,8 @@ if ($resource === 'inscriptions') {
             $controller->getByGroupe((int)$param2);
         } elseif ($param1 === 'departement' && is_numeric($param2)) {
             $controller->getByDepartement((int)$param2);
+        } elseif ($param1 === 'auditeur-search') {
+            $controller->searchAuditeur();
         } elseif (is_numeric($param1)) {
             if ($param2 === 'details') {
                 $controller->getWithDetails((int)$param1);
