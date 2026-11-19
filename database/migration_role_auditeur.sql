@@ -1,10 +1,11 @@
 INSERT IGNORE INTO roles (code, nom) VALUES ('auditeur', 'Auditeur');
 
 -- Permissions minimales pour le rôle auditeur
-SET @aud_role_id = (SELECT id FROM roles WHERE code = 'auditeur' LIMIT 1);
-
+-- INSERT ... SELECT évite la dépendance à une variable de session (@aud_role_id),
+-- qui peut être NULL si le runner MySQL exécute chaque instruction dans une connexion séparée.
 INSERT IGNORE INTO role_permissions (role_id, module_code, action_code)
-VALUES
-  (@aud_role_id, 'evaluations',    'read'),
-  (@aud_role_id, 'presences',      'read'),
-  (@aud_role_id, 'emplois-temps',  'read');
+SELECT r.id, 'evaluations',   'read' FROM roles r WHERE r.code = 'auditeur'
+UNION ALL
+SELECT r.id, 'presences',     'read' FROM roles r WHERE r.code = 'auditeur'
+UNION ALL
+SELECT r.id, 'emplois-temps', 'read' FROM roles r WHERE r.code = 'auditeur';

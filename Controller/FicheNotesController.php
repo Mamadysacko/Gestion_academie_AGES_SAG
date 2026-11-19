@@ -109,6 +109,7 @@ class FicheNotesController
      */
     public function printFicheNotes(int $evaluationId): void
     {
+        try {
         // 1. Évaluation
         $evaluation = $this->fetchOne(
             "SELECT e.id, e.libelle, e.date_evaluation, e.numero,
@@ -237,6 +238,15 @@ class FicheNotesController
         echo 'Signature du formateur : _______________________________ &nbsp;&nbsp; Date : _______________';
         echo '</div>';
         echo '</body></html>';
+        } catch (Exception $e) {
+            // Output has not necessarily started; if it has, we cannot change headers.
+            // Send a plain JSON error only if no output has been flushed yet.
+            if (!headers_sent()) {
+                http_response_code(500);
+                header('Content-Type: application/json; charset=utf-8', true);
+                echo json_encode(['success' => false, 'error' => 'Erreur lors du chargement de la fiche : ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            }
+        }
     }
 
     /* ---- Helpers ---- */

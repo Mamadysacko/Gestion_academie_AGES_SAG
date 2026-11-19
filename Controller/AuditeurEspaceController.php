@@ -580,7 +580,8 @@ class AuditeurEspaceController
                         s.libelle AS session_libelle
                  FROM evaluations e
                  JOIN sessions s ON s.id = e.id_session
-                 JOIN inscriptions i ON i.id_session = s.id AND i.id_auditeur = :id_auditeur AND i.statut = 'active'
+                 JOIN emplois_du_temps edt ON edt.id_session = s.id
+                 JOIN inscriptions i ON i.id_emploi_du_temps = edt.id AND i.id_auditeur = :id_auditeur AND i.statut = 'active'
                  WHERE e.date_evaluation BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
                  ORDER BY e.date_evaluation",
                 ['id_auditeur' => $auditeurId]

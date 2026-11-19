@@ -306,13 +306,13 @@ class InscriptionController
             $stmt = $db->prepare(
                 "SELECT a.id, a.matricule, a.nom, a.prenom, a.telephone, a.email, a.user_id
                  FROM auditeurs a
-                 WHERE LOWER(a.nom)       LIKE LOWER(:q)
-                    OR LOWER(a.prenom)    LIKE LOWER(:q)
-                    OR LOWER(a.matricule) LIKE LOWER(:q)
+                 WHERE LOWER(a.nom)        LIKE LOWER(:q1)
+                    OR LOWER(a.prenom)     LIKE LOWER(:q2)
+                    OR LOWER(a.matricule)  LIKE LOWER(:q3)
                  ORDER BY a.nom, a.prenom
                  LIMIT 20"
             );
-            $stmt->execute([':q' => $term]);
+            $stmt->execute([':q1' => $term, ':q2' => $term, ':q3' => $term]);
             $rows = $stmt->fetchAll();
             $this->sendResponse(200, [
                 'success' => true,
