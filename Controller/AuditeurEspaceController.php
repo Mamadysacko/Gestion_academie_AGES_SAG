@@ -52,7 +52,16 @@ class AuditeurEspaceController
         }
 
         $auditeur = $this->fetchOne(
-            "SELECT a.* FROM auditeurs a WHERE a.user_id = :uid LIMIT 1",
+            "SELECT a.*,
+                    po.libelle AS position,
+                    te.libelle AS type_employe_libelle,
+                    nv.libelle AS niveau_libelle
+             FROM auditeurs a
+             LEFT JOIN positions po ON po.id = a.id_position
+             LEFT JOIN types_employes te ON te.id = a.id_type_employe
+             LEFT JOIN niveaux nv ON nv.id = a.id_niveau
+             WHERE a.user_id = :uid
+             LIMIT 1",
             ['uid' => (int) $user['id']]
         );
         if ($auditeur === null) {
@@ -115,12 +124,33 @@ class AuditeurEspaceController
             $data = $this->getJsonInput();
             $userId = $this->userId();
             $auditeurId = (int) $auditeur['id'];
+            $firstLogin = !empty($auditeur['_user']['first_login']);
+            if ($firstLogin && empty($data['nouveau_mot_de_passe'])) {
+                $this->sendError(400, 'Vous devez définir un nouveau mot de passe avant de poursuivre.');
+                return;
+            }
 
             // Champs modifiables
             $userUpdate = [];
             foreach (['nom', 'prenom', 'telephone', 'email'] as $field) {
                 if (isset($data[$field])) {
                     $userUpdate[$field] = trim((string) $data[$field]);
+                }
+            }
+
+            if (isset($userUpdate['email']) && $userUpdate['email'] === '') {
+                $userUpdate['email'] = null;
+            }
+            if (array_key_exists('telephone', $userUpdate) && $userUpdate['telephone'] === '') {
+                $this->sendError(400, 'Le numéro de téléphone est obligatoire.');
+                return;
+            }
+
+            if (isset($userUpdate['telephone'])) {
+                $existing = $this->userModel->findByPhone($userUpdate['telephone']);
+                if ($existing !== null && (int) $existing['id'] !== $userId) {
+                    $this->sendError(409, 'Ce numéro de téléphone est déjà utilisé par un autre compte.');
+                    return;
                 }
             }
 
@@ -177,7 +207,7 @@ class AuditeurEspaceController
             }
 
             // Marquer first_login = 0
-            if (!empty($data['first_login_done']) || $passwordChanged) {
+            if ($passwordChanged) {
                 $db = $this->userModel->getDatabase();
                 $db->prepare("UPDATE users SET first_login = 0 WHERE id = :id")->execute(['id' => $userId]);
             }
@@ -278,7 +308,7 @@ class AuditeurEspaceController
                 "SELECT edt.id, edt.jour_semaine, edt.heure_debut, edt.heure_fin,
                         g.code AS groupe_code, g.libelle AS groupe_libelle,
                         s.libelle AS session_libelle,
-                        sa.nom AS salle_nom, sa.code AS salle_code,
+                        sa.libelle AS salle_nom, sa.code AS salle_code,
                         CONCAT(u.prenom, ' ', u.nom) AS formateur_nom
                  FROM inscriptions i
                  JOIN emplois_du_temps edt ON edt.id = i.id_emploi_du_temps
@@ -287,7 +317,7 @@ class AuditeurEspaceController
                  JOIN salles sa ON sa.id = edt.id_salle
                  JOIN formateurs f ON f.id = edt.id_formateur
                  JOIN users u ON u.id = f.user_id
-                 WHERE i.id_auditeur = :id_auditeur AND i.statut = 'active'
+                 WHERE i.id_auditeur = :id_auditeur AND i.statut = 'active' AND edt.statut = 1
                  ORDER BY edt.jour_semaine, edt.heure_debut",
                 ['id_auditeur' => (int) $auditeur['id']]
             );
@@ -363,11 +393,9 @@ class AuditeurEspaceController
     public function getNotifications(): void
     {
         try {
-            $user = Authorization::currentUser();
-            if ($user === null) {
-                $this->sendError(401, 'Authentification requise.');
-                return;
-            }
+            $auditeur = $this->resolveAuditeur();
+            if ($auditeur === null) return;
+            $user = $auditeur['_user'];
             $userId  = (int) $user['id'];
             $unread  = isset($_GET['unread']) && $_GET['unread'] === '1';
             $notifs  = $this->notifModel->getForUser($userId, $unread);
@@ -388,11 +416,9 @@ class AuditeurEspaceController
     public function markNotificationRead(int $id): void
     {
         try {
-            $user = Authorization::currentUser();
-            if ($user === null) {
-                $this->sendError(401, 'Authentification requise.');
-                return;
-            }
+            $auditeur = $this->resolveAuditeur();
+            if ($auditeur === null) return;
+            $user = $auditeur['_user'];
             $this->notifModel->markRead($id, (int) $user['id']);
             $this->sendResponse(200, ['success' => true, 'message' => 'Notification lue.']);
         } catch (Exception $e) {
@@ -403,11 +429,9 @@ class AuditeurEspaceController
     public function markAllNotificationsRead(): void
     {
         try {
-            $user = Authorization::currentUser();
-            if ($user === null) {
-                $this->sendError(401, 'Authentification requise.');
-                return;
-            }
+            $auditeur = $this->resolveAuditeur();
+            if ($auditeur === null) return;
+            $user = $auditeur['_user'];
             $count = $this->notifModel->markAllRead((int) $user['id']);
             $this->sendResponse(200, [
                 'success' => true,
@@ -454,9 +478,7 @@ class AuditeurEspaceController
             // Résultats / Passages
             require_once __DIR__ . '/../Model/Resultat.php';
             $resultats = [];
-            try {
-                $resultats = (new Resultat())->getAuditeurParcours($auditeurId)['parcours'] ?? [];
-            } catch (Exception $e) { /* pas de résultats */ }
+            $resultats = (new Resultat())->getAuditeurParcours($auditeurId)['parcours'] ?? [];
 
             // Taux présence
             $presRow = $this->fetchOne(
@@ -517,7 +539,7 @@ class AuditeurEspaceController
             $dayOfWeek = (int) date('N'); // 1=lundi
             $nextCourse = $this->fetchOne(
                 "SELECT edt.jour_semaine, edt.heure_debut, edt.heure_fin,
-                        g.libelle AS groupe, sa.nom AS salle,
+                        g.libelle AS groupe, sa.libelle AS salle,
                         CONCAT(u.prenom, ' ', u.nom) AS formateur
                  FROM inscriptions i
                  JOIN emplois_du_temps edt ON edt.id = i.id_emploi_du_temps
@@ -526,11 +548,21 @@ class AuditeurEspaceController
                  JOIN formateurs f ON f.id = edt.id_formateur
                  JOIN users u ON u.id = f.user_id
                  WHERE i.id_auditeur = :id AND i.statut = 'active'
-                   AND edt.jour_semaine >= :dow
-                 ORDER BY edt.jour_semaine, edt.heure_debut
+                 ORDER BY CASE
+                            WHEN edt.jour_semaine > :dow_future
+                              OR (edt.jour_semaine = :dow_today AND edt.heure_fin >= CURTIME())
+                            THEN 0 ELSE 1
+                          END,
+                          CASE WHEN edt.jour_semaine >= :dow_order
+                               THEN edt.jour_semaine ELSE edt.jour_semaine + 7 END,
+                          edt.heure_debut
                  LIMIT 1",
-                ['id' => $auditeurId, 'dow' => $dayOfWeek]
+                ['id' => $auditeurId, 'dow_future' => $dayOfWeek, 'dow_today' => $dayOfWeek, 'dow_order' => $dayOfWeek]
             );
+            if ($nextCourse !== null) {
+                $jours = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+                $nextCourse['jour_libelle'] = $jours[(int) $nextCourse['jour_semaine']] ?? 'Jour ' . $nextCourse['jour_semaine'];
+            }
 
             // Taux assiduité
             $presRow = $this->fetchOne(
@@ -576,7 +608,7 @@ class AuditeurEspaceController
 
             // ── 1. Évaluations à venir dans les 7 prochains jours ────────────
             $evals = $this->fetchAll(
-                "SELECT e.id, e.libelle, e.date_evaluation,
+                "SELECT DISTINCT e.id, e.libelle, e.date_evaluation,
                         s.libelle AS session_libelle
                  FROM evaluations e
                  JOIN sessions s ON s.id = e.id_session

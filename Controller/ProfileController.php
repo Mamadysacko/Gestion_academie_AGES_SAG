@@ -66,13 +66,19 @@ final class ProfileController
             }
         }
 
+        $firstLogin = !empty($user['first_login']);
         $passwordUpdate = isset($data['new_password']) && (string) $data['new_password'] !== '';
+        if ($firstLogin && !$passwordUpdate) {
+            $this->sendError(400, 'Vous devez choisir un nouveau mot de passe avant de poursuivre.');
+            return;
+        }
         $passwordHash = null;
         if ($passwordUpdate) {
             $newPassword = (string) $data['new_password'];
             $currentPassword = (string) ($data['current_password'] ?? '');
             $storedPassword = $userModel->getPasswordForSync($userId);
-            $currentPasswordValid = $storedPassword !== null && password_verify($currentPassword, $storedPassword);
+            $currentPasswordValid = $firstLogin ||
+                ($storedPassword !== null && password_verify($currentPassword, $storedPassword));
             if (!$currentPasswordValid) {
                 $this->sendError(400, 'Le mot de passe actuel est incorrect.');
                 return;
@@ -93,8 +99,11 @@ final class ProfileController
         }
 
         $db = $userModel->getDatabase();
+        $ownsTransaction = !$db->inTransaction();
         try {
-            $db->beginTransaction();
+            if ($ownsTransaction) {
+                $db->beginTransaction();
+            }
             $changes = [
                 'nom' => $nom,
                 'prenom' => $prenom,
@@ -103,6 +112,9 @@ final class ProfileController
             ];
             if ($passwordHash !== null) {
                 $changes['password'] = $passwordHash;
+                if ($firstLogin) {
+                    $changes['first_login'] = 0;
+                }
             }
             // Pour un formateur, l'identité affichée partout provient de ce même compte.
             $updated = $userModel->update($userId, $changes);
@@ -110,19 +122,27 @@ final class ProfileController
             if (!$updated) {
                 throw new RuntimeException('Le profil n’a pas été modifié.');
             }
-            $db->commit();
+            if ($firstLogin) {
+                $userModel->revokeSessions($userId);
+            }
+            if ($ownsTransaction) {
+                $db->commit();
+            }
         } catch (Throwable $error) {
-            if ($db->inTransaction()) {
+            if ($ownsTransaction && $db->inTransaction()) {
                 $db->rollBack();
             }
             $this->sendError(500, 'Impossible d’enregistrer le profil : ' . $error->getMessage());
             return;
         }
 
+        $updatedUser = array_merge($user, $changes);
+        $updatedUser['first_login'] = $firstLogin && $passwordUpdate ? 0 : (int) ($user['first_login'] ?? 0);
+        unset($updatedUser['password'], $updatedUser['token_version']);
         $this->sendResponse(200, [
             'success' => true,
             'message' => 'Profil mis à jour.',
-            'data' => Authorization::currentUser(),
+            'data' => $updatedUser,
         ]);
     }
 
@@ -163,6 +183,10 @@ final class ProfileController
                 'email' => $user['email'],
                 'matricule' => $user['formateur_matricule'],
             ];
+            $room = (new Formateur())->fetchProfileRoom((int) $user['formateur_id']);
+            $data['trainer']['id_salle'] = $room['id_salle'] === null ? null : (int) $room['id_salle'];
+            $data['trainer']['salle_principale_code'] = $room['salle_code'];
+            $data['trainer']['salle_principale_libelle'] = $room['salle_libelle'];
             $this->sendResponse(200, ['success' => true, 'data' => $data]);
         } catch (Throwable $error) {
             $this->sendError(500, 'Impossible de charger votre espace formateur : ' . $error->getMessage());

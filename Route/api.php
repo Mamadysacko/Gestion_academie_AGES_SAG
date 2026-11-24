@@ -65,6 +65,7 @@ try {
         __DIR__ . '/routes/users.php',
         __DIR__ . '/routes/organisation.php',
         __DIR__ . '/routes/sessions.php',
+        __DIR__ . '/routes/auditeur_espace.php',
         __DIR__ . '/routes/auditeurs.php',
         __DIR__ . '/routes/ressources.php',
         __DIR__ . '/routes/emplois.php',
@@ -113,9 +114,14 @@ try {
     }
 
     http_response_code($code);
+    $message = $e->getMessage();
+    if ($code >= 500 && !DEBUG_MODE) {
+        error_log(sprintf('Erreur API %s %s : %s', $method, $uri, $message));
+        $message = 'Une erreur interne est survenue.';
+    }
     echo json_encode([
         'success' => false,
-        'error'   => $e->getMessage(),
+        'error'   => $message,
     ], JSON_UNESCAPED_UNICODE);
 }
 

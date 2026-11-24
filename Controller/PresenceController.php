@@ -4,14 +4,17 @@
  */
 
 require_once __DIR__ . '/../Model/Presence.php';
+require_once __DIR__ . '/../Model/Notification.php';
 
 class PresenceController
 {
     private Presence $model;
+    private Notification $notifications;
 
     public function __construct()
     {
         $this->model = new Presence();
+        $this->notifications = new Notification();
     }
 
     public function getAll(): void
@@ -137,7 +140,19 @@ class PresenceController
                 $this->sendError(403, 'Un formateur ne peut pointer que la date du jour (' . date('d/m/y') . ').');
                 return;
             }
+            $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id): bool => $id > 0)));
+            if ($ids === []) {
+                $this->sendError(400, 'Aucun identifiant d’inscription valide.');
+                return;
+            }
+            $before = $this->getAttendanceStatuses($ids, $date);
             $result = $this->model->markBulk($date, (string) ($data['statut'] ?? 'present'), $ids, $trainerId);
+            $after = $this->getAttendanceStatuses($ids, $date);
+            foreach ($after as $inscriptionId => $status) {
+                if ($status === 'absent' && ($before[$inscriptionId] ?? null) !== 'absent') {
+                    $this->notifyAbsence((int) $inscriptionId, $date);
+                }
+            }
             $this->sendResponse(200, [
                 'success' => true,
                 'message' => "{$result['saved']} pointage(s) enregistré(s)."
@@ -154,7 +169,8 @@ class PresenceController
     public function update(int $id): void
     {
         try {
-            if (!$this->model->exists($id)) {
+            $current = $this->getAttendance($id);
+            if ($current === null) {
                 $this->sendError(404, "Présence introuvable.");
                 return;
             }
@@ -170,6 +186,9 @@ class PresenceController
             $success = $this->model->updateAttendance($id, $data);
 
             if ($success) {
+                if (($data['statut'] ?? null) === 'absent' && $current['statut'] !== 'absent') {
+                    $this->notifyAbsence((int) $current['id_inscription'], (string) $current['date_presence']);
+                }
                 $this->sendResponse(200, ['success' => true, 'message' => 'Présence mise à jour.']);
             } else {
                 $this->sendError(400, "Aucune donnée valide.");
@@ -283,6 +302,7 @@ class PresenceController
                 }
             }
 
+            $previousStatus = $this->getAttendanceStatus((int) $data['id_inscription'], $data['date_presence']);
             $success = $this->model->markPresence(
                 $data['id_inscription'],
                 $data['date_presence'],
@@ -295,6 +315,9 @@ class PresenceController
             );
 
             if ($success) {
+                if ($data['statut'] === 'absent' && $previousStatus !== 'absent') {
+                    $this->notifyAbsence((int) $data['id_inscription'], $data['date_presence']);
+                }
                 $this->sendResponse(200, [
                     'success' => true,
                     'message' => 'Présence marquée avec succès.'
@@ -316,6 +339,61 @@ class PresenceController
         $json = file_get_contents('php://input');
         $data = json_decode($json, true);
         return is_array($data) ? $data : [];
+    }
+
+    private function getAttendance(int $id): ?array
+    {
+        $stmt = Database::getInstance()->prepare(
+            'SELECT id_inscription, date_presence, statut FROM presences WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
+    private function getAttendanceStatus(int $inscriptionId, string $date): ?string
+    {
+        $stmt = Database::getInstance()->prepare(
+            'SELECT statut FROM presences WHERE id_inscription = :id AND date_presence = :date LIMIT 1'
+        );
+        $stmt->execute(['id' => $inscriptionId, 'date' => $date]);
+        $status = $stmt->fetchColumn();
+        return $status === false ? null : (string) $status;
+    }
+
+    /** @param list<int> $inscriptionIds
+     *  @return array<int, string>
+     */
+    private function getAttendanceStatuses(array $inscriptionIds, string $date): array
+    {
+        if ($inscriptionIds === []) {
+            return [];
+        }
+        $placeholders = [];
+        $params = ['date' => $date];
+        foreach ($inscriptionIds as $index => $id) {
+            $key = 'id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $id;
+        }
+        $stmt = Database::getInstance()->prepare(
+            'SELECT id_inscription, statut FROM presences WHERE date_presence = :date AND id_inscription IN (' . implode(', ', $placeholders) . ')'
+        );
+        $stmt->execute($params);
+        $statuses = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $statuses[(int) $row['id_inscription']] = (string) $row['statut'];
+        }
+        return $statuses;
+    }
+
+    private function notifyAbsence(int $inscriptionId, string $date): void
+    {
+        try {
+            $this->notifications->createAbsenceAlertForInscription($inscriptionId, $date);
+        } catch (Throwable $error) {
+            error_log('AGES : impossible de créer l’alerte de présence : ' . $error->getMessage());
+        }
     }
 
     private function sendResponse(int $code, array $data): void

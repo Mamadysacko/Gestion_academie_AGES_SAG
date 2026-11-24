@@ -100,7 +100,8 @@ INSERT INTO roles (id, code, nom) VALUES
   (1, 'admin', 'Administrateur'),
   (2, 'secretaire', 'Secrétaire'),
   (3, 'approbateur', 'Approbateur de passages'),
-  (4, 'formateur', 'Formateur');
+  (4, 'formateur', 'Formateur'),
+  (5, 'auditeur', 'Auditeur');
 
 -- Mot de passe de tous les comptes : « mot-de-passe-factice » (haché, comme en production).
 INSERT INTO users (id, nom, prenom, email, telephone, password, role_id, actif) VALUES
@@ -111,4 +112,5 @@ INSERT INTO users (id, nom, prenom, email, telephone, password, role_id, actif) 
 
 INSERT INTO role_permissions (role_id, module_code, action_code) VALUES
   (2, 'evaluations', 'read'), (2, 'auditeurs', 'read'), (2, 'auditeurs', 'create'),
-  (3, 'evaluations', 'read'), (3, 'passages-niveau', 'validate');
+  (3, 'evaluations', 'read'), (3, 'passages-niveau', 'validate'),
+  (5, 'evaluations', 'read'), (5, 'presences', 'read'), (5, 'emplois-temps', 'read');

@@ -16,6 +16,23 @@
  * DELETE /emplois-du-temps/{id}                     → Supprimer
  */
 
+if ($resource === 'affectations-ponctuelles') {
+    require_once __DIR__ . '/../../Controller/AffectationPonctuelleController.php';
+    $controller = new AffectationPonctuelleController();
+    if ($method === 'GET' && $param1 === null) {
+        $controller->getAll();
+    } elseif ($method === 'POST' && $param1 === null) {
+        $controller->create();
+    } elseif ($method === 'PUT' && is_numeric($param1)) {
+        $controller->update((int) $param1);
+    } elseif ($method === 'DELETE' && is_numeric($param1)) {
+        $controller->delete((int) $param1);
+    } else {
+        throw new Exception('Route ou méthode non autorisée.', 405);
+    }
+    return true;
+}
+
 if ($resource !== 'emplois-du-temps') return false;
 
 $controller = new EmploiDuTempsController();

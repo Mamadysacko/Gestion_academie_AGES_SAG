@@ -9,13 +9,45 @@
 
 ### Installation
 1. Importer la base de données : `database/DB Gestion Academie.sql`
-2. Configurer les paramètres de connexion dans `config/config.php`
+2. Fournir les paramètres d'environnement du serveur (voir la configuration de production ci-dessous)
 3. S'assurer que le serveur Apache et MySQL sont démarrés
+4. Appliquer les migrations requises, notamment `database/migration_affectations_ponctuelles.sql`
+
+### Identifiants des comptes auditeur
+
+Aucun e-mail n'est envoyé lors de la création d'un compte auditeur. L'identifiant et le mot de passe temporaire sont affichés une seule fois dans l'interface d'administration ; ils doivent être transmis de façon sécurisée. L'auditeur doit changer son mot de passe à la première connexion.
 
 ### URL de base
 ```
-http://localhost/Backend_AGES/Route/api.php/
+https://<domaine>/Backend_AGES/Route/
 ```
+
+### Configuration de production
+
+L'interface de production utilise par défaut le chemin relatif `/Backend_AGES/Route` : hébergez l'interface et l'API sous la même origine HTTPS. Pour une interface et une API sur des origines distinctes, définissez `VITE_API_BASE_URL` au moment de construire l'interface avec une URL `https://` et autorisez exactement l'origine de l'interface dans `AGES_CORS_ALLOWED_ORIGINS`.
+
+Configurez les variables suivantes dans l'environnement du processus PHP (ne les placez pas dans le dépôt) :
+
+| Variable | Comportement |
+|---|---|
+| `AGES_DEBUG_MODE` | `false` par défaut. Ne l'activez qu'en développement ; les réponses HTTP 500 ne divulguent pas le détail des exceptions en production. |
+| `AGES_COOKIE_SECURE` | Détection automatique sur une connexion HTTPS directe. Définir explicitement `true` derrière un proxy inverse qui termine TLS. |
+| `AGES_CORS_ALLOWED_ORIGINS` | Liste séparée par des virgules d'origines exactes (`https://app.example.org`, éventuellement avec un port). Si absente, seules les origines locales de développement sont autorisées ; une valeur vide n'autorise aucune origine cross-origin. Ne pas utiliser `*`. |
+
+Terminez TLS sur le serveur web ou le proxy de confiance, redirigez HTTP vers HTTPS et protégez l'accès aux journaux PHP. En même origine, aucun réglage CORS supplémentaire n'est nécessaire.
+
+### Affectations ponctuelles des formateurs
+
+Exécutez `database/migration_affectations_ponctuelles.sql` avant d'utiliser ces routes. Une affectation ponctuelle porte sur une seule date et ne modifie ni la salle principale du formateur ni le planning hebdomadaire.
+
+```http
+GET    /affectations-ponctuelles
+POST   /affectations-ponctuelles
+PUT    /affectations-ponctuelles/{id}
+DELETE /affectations-ponctuelles/{id}
+```
+
+Le corps d'une création ou modification contient `id_emploi_du_temps`, `id_formateur`, `id_salle`, `date_affectation` (AAAA-MM-JJ) et `motif`. Le serveur vérifie le jour habituel, les périodes de session et d'année, la capacité de la salle et les conflits de disponibilité.
 
 ## Endpoints disponibles
 
@@ -347,7 +379,7 @@ curl -X GET http://localhost/Backend_AGES/Route/api.php/annees-scolaires/active
 
 4. **Suppression en cascade** : Certaines suppressions peuvent échouer si des enregistrements liés existent (contraintes de clés étrangères).
 
-5. **CORS** : Les headers CORS sont configurés pour accepter toutes les origines (`*`). À ajuster en production.
+5. **CORS** : Les origines sont comparées exactement ; les origines locales ne sont autorisées par défaut que pour le développement. Configurez `AGES_CORS_ALLOWED_ORIGINS` pour une interface cross-origin en production.
 
 
 ---

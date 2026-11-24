@@ -21,6 +21,8 @@ abstract class ControllerTestCase extends TestCase
     {
         if (!self::$databaseReady) {
             buildTestDatabase();
+            $migration = (string) file_get_contents(__DIR__ . '/../../database/migration_affectations_ponctuelles.sql');
+            Database::getInstance()->exec($migration);
             self::$databaseReady = true;
         }
     }

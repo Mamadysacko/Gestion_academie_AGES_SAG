@@ -31,6 +31,47 @@ final class AuthTokenTest extends ControllerTestCase
         self::assertSame(1, (int) $this->scalar('SELECT COUNT(*) FROM refresh_tokens WHERE token_hash = ?', [hash('sha256', $json['refresh_token'])]));
     }
 
+    public function testLesComptesCreesOntUnChangementDeMotDePasseObligatoire(): void
+    {
+        [$code, $json] = $this->request(
+            fn() => (new UserController())->create(),
+            [
+                'nom' => 'Keita',
+                'prenom' => 'Sali',
+                'telephone' => '620000090',
+                'password' => 'Temporaire!90',
+                'role_id' => 2,
+            ]
+        );
+
+        self::assertSame(201, $code, json_encode($json));
+        self::assertSame(1, (int) $this->scalar('SELECT first_login FROM users WHERE id = ?', [$json['data']['id']]));
+    }
+
+    public function testLaPremiereConnexionBloqueLesAutresRoutesJusquaLaModificationDuMotDePasse(): void
+    {
+        $this->scalar('UPDATE users SET first_login = 1 WHERE id = 2');
+        $this->loginAs(2);
+        Authorization::resetRequestState();
+
+        try {
+            Authorization::authorizeRequest('auditeurs', 'GET', null, null);
+            self::fail('L’accès aux autres modules doit être bloqué.');
+        } catch (RuntimeException $error) {
+            self::assertSame(403, $error->getCode());
+        }
+
+        [$code, $json] = $this->request(
+            fn() => (new ProfileController())->updateProfile(),
+            ['new_password' => 'NouveauMotDePasse!90']
+        );
+
+        self::assertSame(200, $code, json_encode($json));
+        self::assertSame(0, (int) $this->scalar('SELECT first_login FROM users WHERE id = 2'));
+        self::assertTrue(password_verify('NouveauMotDePasse!90', (string) $this->scalar('SELECT password FROM users WHERE id = 2')));
+        self::assertArrayNotHasKey('password', $json['data']);
+    }
+
     public function testUnMotDePasseStockeEnClairNEstPlusAccepte(): void
     {
         $this->scalar("UPDATE users SET password = 'en-clair' WHERE id = 2");

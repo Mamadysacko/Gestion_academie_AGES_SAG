@@ -10,7 +10,7 @@ class User extends Model
     protected string $table = 'users';
 
     protected array $fillable = [
-        'nom', 'prenom', 'email', 'telephone', 'password', 'role_id', 'actif', 'last_login',
+        'nom', 'prenom', 'email', 'telephone', 'password', 'role_id', 'actif', 'first_login', 'last_login',
     ];
 
     /** Crée un utilisateur ; le mot de passe est toujours enregistré haché. */
@@ -54,7 +54,7 @@ class User extends Model
     public function getAllWithRole(): array
     {
         return $this->fetchAll(
-            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif,
+            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif, u.first_login,
                     u.last_login, u.created_at, u.updated_at, u.role_id,
                     r.code AS role_code, r.nom AS role_nom,
                     (SELECT f.id FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_id,
@@ -169,7 +169,7 @@ class User extends Model
     public function findWithRole(int $id): ?array
     {
         return $this->fetchOne(
-            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif, u.token_version,
+            "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif, u.first_login, u.token_version,
                     u.last_login, u.created_at, u.updated_at, u.role_id,
                     r.code AS role_code, r.nom AS role_nom,
                     (SELECT f.id FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_id,

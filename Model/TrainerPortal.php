@@ -47,6 +47,48 @@ final class TrainerPortal extends Model
             ['trainer_id' => $trainerId]
         ) : [];
 
+        $substitutions = $this->fetchAll(
+            "SELECT ap.id, ap.id_emploi_du_temps, ap.date_affectation, ap.motif,
+                    e.id_annee, e.id_session, e.id_groupe, e.jour_semaine, e.heure_debut, e.heure_fin,
+                    g.code AS groupe_code, g.libelle AS groupe_libelle,
+                    s.code AS session_code, s.libelle AS session_libelle,
+                    s.date_debut AS session_date_debut, s.date_fin AS session_date_fin,
+                    tf.libelle AS formation_libelle, n.libelle AS niveau_libelle,
+                    an.libelle AS annee_libelle,
+                    sa.code AS salle_code, sa.libelle AS salle_libelle, sa.capacite AS salle_capacite,
+                    sh.code AS salle_habituelle_code, sh.libelle AS salle_habituelle_libelle,
+                    CONCAT(fh.prenom, ' ', fh.nom) AS formateur_habituel_nom,
+                    (SELECT COUNT(*) FROM inscriptions i
+                     WHERE i.id_emploi_du_temps = e.id AND i.statut = 'active') AS effectif
+             FROM affectations_ponctuelles ap
+             JOIN emplois_du_temps e ON e.id = ap.id_emploi_du_temps
+             JOIN groupes g ON g.id = e.id_groupe
+             JOIN sessions s ON s.id = e.id_session
+             JOIN types_formations tf ON tf.id = s.id_type_formation
+             JOIN niveaux n ON n.id = s.id_niveau
+             JOIN annees_scolaires an ON an.id = e.id_annee
+             JOIN salles sa ON sa.id = ap.id_salle
+             JOIN salles sh ON sh.id = e.id_salle
+             JOIN v_formateurs fh ON fh.id = e.id_formateur
+             WHERE ap.id_formateur = ?
+             ORDER BY ap.date_affectation DESC, ap.id DESC",
+            [$trainerId]
+        );
+
+        $substitutionLearners = $this->fetchAll(
+            "SELECT ap.id AS id_affectation_ponctuelle, i.id AS id_inscription,
+                    a.matricule AS auditeur_matricule, a.nom AS auditeur_nom,
+                    a.prenom AS auditeur_prenom, a.sexe AS auditeur_sexe,
+                    d.code AS departement_code, d.libelle AS departement_libelle
+             FROM affectations_ponctuelles ap
+             JOIN inscriptions i ON i.id_emploi_du_temps = ap.id_emploi_du_temps AND i.statut = 'active'
+             JOIN auditeurs a ON a.id = i.id_auditeur
+             LEFT JOIN departements d ON d.id = i.id_departement
+             WHERE ap.id_formateur = ?
+             ORDER BY ap.date_affectation DESC, a.nom, a.prenom",
+            [$trainerId]
+        );
+
         $learners = $canReadAttendanceRoster ? $this->fetchAll(
             "SELECT i.id AS id_inscription, i.id_emploi_du_temps, i.statut AS inscription_statut,
                     i.date_inscription, a.id AS id_auditeur, a.matricule AS auditeur_matricule,
@@ -143,6 +185,8 @@ final class TrainerPortal extends Model
 
         return [
             'schedules' => $schedules,
+            'substitutions' => $substitutions,
+            'substitution_learners' => $substitutionLearners,
             'learners' => $learners,
             'attendance' => $attendance,
             'grades' => $grades,

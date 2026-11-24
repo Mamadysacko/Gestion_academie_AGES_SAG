@@ -21,6 +21,39 @@ class ParametreEvaluation extends Model
         return $this->db;
     }
 
+    public function create(array $data): int
+    {
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
+
+        try {
+            $id = parent::create($data);
+            $this->attachToExistingEvaluations($id);
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
+            return $id;
+        } catch (Throwable $error) {
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $error;
+        }
+    }
+
+    private function attachToExistingEvaluations(int $id_parametre): void
+    {
+        $this->db->prepare(
+            'INSERT INTO evaluation_parametres (id_evaluation, id_parametre, ordre)
+             SELECT e.id, :id_parametre, COALESCE(MAX(ep.ordre), 0) + 1
+             FROM evaluations e
+             LEFT JOIN evaluation_parametres ep ON ep.id_evaluation = e.id
+             GROUP BY e.id'
+        )->execute(['id_parametre' => $id_parametre]);
+    }
+
     /** Paramètres globaux et nombre d'évaluations auxquelles ils sont associés. */
     public function getAllWithRelations(): array
     {

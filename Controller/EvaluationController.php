@@ -5,14 +5,17 @@
 
 require_once __DIR__ . '/../Model/Evaluation.php';
 require_once __DIR__ . '/../Model/ReglesEvaluation.php';
+require_once __DIR__ . '/../Model/Notification.php';
 
 class EvaluationController
 {
     private Evaluation $model;
+    private Notification $notifications;
 
     public function __construct()
     {
         $this->model = new Evaluation();
+        $this->notifications = new Notification();
     }
 
     public function getAll(): void
@@ -88,12 +91,16 @@ class EvaluationController
                 $this->sendError(409, $dateError);
                 return;
             }
-
             $id = $this->model->create($data);
+            $this->notifySessionAuditeurs(
+                (int) $data['id_session'],
+                'Nouvelle évaluation planifiée',
+                "L'évaluation « {$data['libelle']} » est planifiée le " . $date->format('d/m/Y') . '. Consultez votre espace auditeur pour les détails.'
+            );
 
             $this->sendResponse(201, [
                 'success' => true,
-                'message' => 'Évaluation créée avec succès.',
+                'message' => 'Évaluation créée. Les paramètres existants ont été associés automatiquement.',
                 'data' => ['id' => $id]
             ]);
         } catch (PDOException $e) {
@@ -146,6 +153,16 @@ class EvaluationController
             $success = $this->model->update($id, $data);
 
             if ($success) {
+                if (array_intersect(['libelle', 'date_evaluation', 'id_session'], array_keys($data))) {
+                    $updated = array_replace($current, $data);
+                    $date = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $updated['date_evaluation']);
+                    $dateLabel = $date ? $date->format('d/m/Y') : (string) $updated['date_evaluation'];
+                    $this->notifySessionAuditeurs(
+                        (int) $updated['id_session'],
+                        'Évaluation mise à jour',
+                        "L'évaluation « {$updated['libelle']} » a été mise à jour. Date prévue : {$dateLabel}. Consultez votre espace auditeur."
+                    );
+                }
                 $this->sendResponse(200, ['success' => true, 'message' => 'Évaluation mise à jour.']);
             } else {
                 $this->sendError(400, "Aucune donnée valide.");
@@ -164,10 +181,17 @@ class EvaluationController
         try {
             $count = (new ReglesEvaluation())->getRegles($this->model->niveauOfSession($id_session))['nb_evaluations'];
             $created = $this->model->generateForSession($id_session, $count);
+            if ($created > 0) {
+                $this->notifySessionAuditeurs(
+                    $id_session,
+                    'Évaluations planifiées',
+                    "{$created} nouvelle(s) évaluation(s) ont été planifiée(s) pour votre session. Consultez votre espace auditeur pour les dates."
+                );
+            }
             $this->sendResponse(201, [
                 'success' => true,
                 'message' => $created
-                    ? "{$created} évaluation(s) créée(s). Associez-leur les critères avant la saisie des notes."
+                    ? "{$created} évaluation(s) créée(s). Les paramètres existants sont associés automatiquement et restent modifiables dans la configuration des évaluations."
                     : "Les {$count} évaluations de cette session existent déjà.",
                 'data' => ['created' => $created],
             ]);
@@ -206,6 +230,7 @@ class EvaluationController
             $data['numero'] = $free[0];
             return null;
         }
+
         $numero = filter_var($data['numero'], FILTER_VALIDATE_INT);
         if ($numero === false || $numero < 1 || $numero > $max) {
             return "Le numéro d’évaluation doit être compris entre 1 et {$max}.";
@@ -215,6 +240,15 @@ class EvaluationController
         }
         $data['numero'] = $numero;
         return null;
+    }
+
+    private function notifySessionAuditeurs(int $sessionId, string $title, string $message): void
+    {
+        try {
+            $this->notifications->createForActiveAuditeursInSession($sessionId, $title, $message);
+        } catch (Throwable $error) {
+            error_log('AGES : impossible de créer les notifications de planification d’évaluation : ' . $error->getMessage());
+        }
     }
 
     public function delete(int $id): void

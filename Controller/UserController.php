@@ -206,6 +206,8 @@ class UserController
             if (!isset($data['actif'])) {
                 $data['actif'] = 1;
             }
+            // Tout compte créé avec un identifiant temporaire doit le remplacer à sa première connexion.
+            $data['first_login'] = 1;
 
             unset($data['matricule']);
             $db = $this->model->getDatabase();
@@ -355,6 +357,9 @@ class UserController
             }
             if (array_key_exists('password', $data) && $data['password'] === '') {
                 unset($data['password']);
+            } elseif (isset($data['password'])) {
+                // Une réinitialisation administrative impose un nouveau choix au prochain accès.
+                $data['first_login'] = 1;
             }
 
             unset($data['matricule']);

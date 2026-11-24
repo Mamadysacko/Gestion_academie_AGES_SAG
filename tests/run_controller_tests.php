@@ -41,17 +41,18 @@ $r = call('GET /auditeurs/matricule/AUD-T-003', null, fn() => (new AuditeurContr
 check('lecture par matricule', ($r[1]['data']['nom'] ?? '') === 'Sow');
 
 section('Création et validations');
-$r = call('POST /auditeurs (valide)', ['matricule' => 'AUD-T-005', 'nom' => 'Keita', 'prenom' => 'Sekou', 'sexe' => 'M', 'id_position' => 3, 'id_type_employe' => 2], fn() => (new AuditeurController())->create());
+$r = call('POST /auditeurs (valide)', ['matricule' => 'AUD-T-005', 'nom' => 'Keita', 'prenom' => 'Sekou', 'sexe' => 'M', 'telephone' => '620000005', 'id_position' => 3, 'id_type_employe' => 2], fn() => (new AuditeurController())->create());
 expectStatus($r, 201, 'création → 201');
 $newId = (int) ($r[1]['data']['id'] ?? 0);
 check('la position choisie est liée en base', (int) dbValue('SELECT id_position FROM auditeurs WHERE id = ?', [$newId]) === 3);
 expectStatus(call('POST /auditeurs (matricule en double)', ['matricule' => 'AUD-T-005', 'nom' => 'X', 'prenom' => 'Y'], fn() => (new AuditeurController())->create()), 409, 'matricule en double → 409');
+expectStatus(call('POST /auditeurs (téléphone manquant, e-mail présent)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'email' => 'a@example.test'], fn() => (new AuditeurController())->create()), 400, 'téléphone obligatoire → 400');
 expectStatus(call('POST /auditeurs (sans nom)', ['matricule' => 'AUD-T-006', 'prenom' => 'Y'], fn() => (new AuditeurController())->create()), 400, 'nom manquant → 400');
-expectStatus(call('POST /auditeurs (sexe « X »)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'sexe' => 'X'], fn() => (new AuditeurController())->create()), 400, 'sexe invalide → 400');
-expectStatus(call('POST /auditeurs (e-mail invalide)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'email' => 'pas-un-mail'], fn() => (new AuditeurController())->create()), 400, 'e-mail invalide → 400');
-$r = call('POST /auditeurs (position 999)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'id_position' => 999], fn() => (new AuditeurController())->create());
+expectStatus(call('POST /auditeurs (sexe « X »)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'telephone' => '620000006', 'sexe' => 'X'], fn() => (new AuditeurController())->create()), 400, 'sexe invalide → 400');
+expectStatus(call('POST /auditeurs (e-mail invalide)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'email' => 'pas-un-mail', 'telephone' => '620000006'], fn() => (new AuditeurController())->create()), 400, 'e-mail invalide → 400');
+$r = call('POST /auditeurs (position 999)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'telephone' => '620000006', 'id_position' => 999], fn() => (new AuditeurController())->create());
 check('position inexistante → 400', $r[0] === 400 && str_contains($r[1]['error'] ?? '', 'position'));
-expectStatus(call('POST /auditeurs (type d’employé 999)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'id_type_employe' => 999], fn() => (new AuditeurController())->create()), 400, 'type d’employé inexistant → 400');
+expectStatus(call('POST /auditeurs (type d’employé 999)', ['matricule' => 'AUD-T-006', 'nom' => 'A', 'prenom' => 'B', 'telephone' => '620000006', 'id_type_employe' => 999], fn() => (new AuditeurController())->create()), 400, 'type d’employé inexistant → 400');
 check('aucun auditeur n’a été créé par les requêtes refusées', (int) dbValue('SELECT COUNT(*) FROM auditeurs') === 5);
 
 section('Modification et suppression');

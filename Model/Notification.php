@@ -53,13 +53,13 @@ class Notification extends Model
     }
 
     /** Crée une notification de bienvenue pour un nouvel auditeur. */
-    public function createWelcome(int $userId, string $login, string $password): int
+    public function createWelcome(int $userId, string $login): int
     {
         return $this->create([
             'user_id' => $userId,
             'type'    => 'info',
             'titre'   => 'Bienvenue ! Voici vos identifiants de connexion',
-            'message' => "Votre compte a été créé.\n\nIdentifiant : {$login}\nMot de passe : {$password}\n\n⚠️ Notez bien ces informations et modifiez votre mot de passe depuis votre profil.",
+            'message' => "Votre compte a été créé.\n\nIdentifiant : {$login}\n\nLe mot de passe temporaire a été affiché une seule fois à l'administrateur lors de la création. Si vous ne l'avez pas reçu, contactez l'administration pour le réinitialiser.",
         ]);
     }
 
@@ -86,5 +86,56 @@ class Notification extends Model
             'titre'   => "Bulletin disponible : {$sessionLibelle}",
             'message' => "Votre bulletin de notes pour la session « {$sessionLibelle} » est disponible. Connectez-vous à votre espace pour le consulter.",
         ]);
+    }
+
+    /** Notifie les auditeurs actifs et liés à un compte pour une session. */
+    public function createForActiveAuditeursInSession(int $sessionId, string $titre, string $message, string $type = 'alerte_evaluation'): int
+    {
+        $users = $this->fetchAll(
+            "SELECT DISTINCT a.user_id
+             FROM inscriptions i
+             JOIN auditeurs a ON a.id = i.id_auditeur
+             WHERE i.id_session = :session_id
+               AND i.statut = 'active'
+               AND a.user_id IS NOT NULL",
+            ['session_id' => $sessionId]
+        );
+        $created = 0;
+        foreach ($users as $user) {
+            $this->create([
+                'user_id' => (int) $user['user_id'],
+                'type' => $type,
+                'titre' => $titre,
+                'message' => $message,
+            ]);
+            $created++;
+        }
+        return $created;
+    }
+
+    /** Crée une alerte d'absence pour l'auditeur lié à une inscription. */
+    public function createAbsenceAlertForInscription(int $inscriptionId, string $date): bool
+    {
+        $userId = $this->fetchColumn(
+            "SELECT a.user_id
+             FROM inscriptions i
+             JOIN auditeurs a ON a.id = i.id_auditeur
+             WHERE i.id = :id AND a.user_id IS NOT NULL
+             LIMIT 1",
+            ['id' => $inscriptionId]
+        );
+        if ($userId === false || $userId === null) {
+            return false;
+        }
+
+        $formattedDate = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $dateLabel = $formattedDate ? $formattedDate->format('d/m/Y') : $date;
+        $this->create([
+            'user_id' => (int) $userId,
+            'type' => 'alerte_presence',
+            'titre' => 'Absence enregistrée',
+            'message' => "Une absence a été enregistrée pour votre séance du {$dateLabel}. Consultez votre espace ou contactez l'administration en cas d'erreur.",
+        ]);
+        return true;
     }
 }

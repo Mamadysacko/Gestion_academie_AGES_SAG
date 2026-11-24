@@ -3,11 +3,6 @@
  * Configuration Générale de l'Application Serveur_AGES
  */
 
-// Start session if not started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Global Application Constants
 define('APP_NAME', 'Académie de Langues - AGES');
 define('APP_URL', 'http://localhost/Serveur_AGES');
@@ -29,13 +24,31 @@ define('JWT_REFRESH_COOKIE', 'ages_refresh');
 // Les anciens clients authentifiés par cookie de session PHP restent acceptés tant que cette option vaut true.
 define('AUTH_SESSION_FALLBACK', filter_var(getenv('AGES_AUTH_SESSION_FALLBACK') === false ? 'true' : getenv('AGES_AUTH_SESSION_FALLBACK'), FILTER_VALIDATE_BOOLEAN));
 
+// En production, les cookies restent sécurisés même derrière un proxy TLS terminant HTTPS.
+$cookieSecureSetting = getenv('AGES_COOKIE_SECURE');
+$requestUsesHttps = !empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off';
+define(
+    'AGES_COOKIE_SECURE',
+    $cookieSecureSetting === false ? $requestUsesHttps : filter_var($cookieSecureSetting, FILTER_VALIDATE_BOOLEAN)
+);
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure' => AGES_COOKIE_SECURE,
+    ]);
+    session_start();
+}
+
 // Fuseau horaire de l'académie : la « date du jour » des pointages doit être celle de Conakry
 date_default_timezone_set('Africa/Conakry');
 
-// Debug Mode
-define('DEBUG_MODE', true); // Mettre à false en production
+// Les détails techniques sont masqués par défaut ; activer uniquement en développement.
+$debugSetting = getenv('AGES_DEBUG_MODE');
+define('DEBUG_MODE', $debugSetting !== false && filter_var($debugSetting, FILTER_VALIDATE_BOOLEAN));
 
-// Display Errors in Dev Mode
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+ini_set('display_errors', DEBUG_MODE ? '1' : '0');
+ini_set('display_startup_errors', DEBUG_MODE ? '1' : '0');
+ini_set('log_errors', '1');
 error_reporting(E_ALL);

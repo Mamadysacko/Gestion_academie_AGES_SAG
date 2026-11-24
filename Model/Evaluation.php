@@ -13,6 +13,45 @@ class Evaluation extends Model
         'id_session', 'numero', 'libelle', 'date_evaluation',
     ];
 
+    public function create(array $data): int
+    {
+        $ownsTransaction = !$this->db->inTransaction();
+        if ($ownsTransaction) {
+            $this->db->beginTransaction();
+        }
+
+        try {
+            $id = parent::create($data);
+            $this->attachAllParameters($id);
+            if ($ownsTransaction) {
+                $this->db->commit();
+            }
+            return $id;
+        } catch (Throwable $error) {
+            if ($ownsTransaction && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $error;
+        }
+    }
+
+    private function attachAllParameters(int $id_evaluation): void
+    {
+        $parameters = $this->fetchAll('SELECT id FROM parametres ORDER BY id');
+        $statement = $this->db->prepare(
+            'INSERT INTO evaluation_parametres (id_evaluation, id_parametre, ordre)
+             VALUES (:id_evaluation, :id_parametre, :ordre)'
+        );
+
+        foreach ($parameters as $index => $parameter) {
+            $statement->execute([
+                'id_evaluation' => $id_evaluation,
+                'id_parametre' => $parameter['id'],
+                'ordre' => $index + 1,
+            ]);
+        }
+    }
+
     /** Évaluations d'une session. */
     public function getBySession(int $id_session): array
     {

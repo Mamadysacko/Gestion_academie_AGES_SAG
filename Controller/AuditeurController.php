@@ -4,6 +4,8 @@
  */
 
 require_once __DIR__ . '/../Model/Auditeur.php';
+require_once __DIR__ . '/../Model/User.php';
+require_once __DIR__ . '/../Model/Notification.php';
 
 class AuditeurController
 {
@@ -135,7 +137,7 @@ class AuditeurController
     }
 
     /**
-     * Crée un nouvel auditeur
+     * Crée un nouvel auditeur + compte utilisateur automatique
      * POST /auditeurs
      */
     public function create(): void
@@ -152,11 +154,21 @@ class AuditeurController
                 }
             }
 
-            // Vérification de l'unicité du matricule
+            // Vérification de l'unicité avant les autres validations métier.
             if ($this->model->findByMatricule($data['matricule']) !== null) {
                 $this->sendError(409, "Un auditeur avec ce matricule existe déjà.");
                 return;
             }
+
+            // Chaque compte auditeur doit disposer d'un téléphone pour la connexion.
+            $email     = !empty($data['email']) ? trim((string) $data['email']) : null;
+            $telephone = !empty($data['telephone']) ? trim((string) $data['telephone']) : null;
+            if ($telephone === null || $telephone === '') {
+                $this->sendError(400, "Le numéro de téléphone est obligatoire pour créer un compte auditeur.");
+                return;
+            }
+            $data['telephone'] = $telephone;
+            $data['email'] = $email;
 
             // Validation du sexe si fourni
             if (isset($data['sexe']) && !in_array($data['sexe'], Auditeur::SEXES)) {
@@ -165,7 +177,7 @@ class AuditeurController
             }
 
             // Validation de l'email si fourni
-            if (!empty($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $this->sendError(400, "L'email fourni n'est pas valide.");
                 return;
             }
@@ -176,13 +188,88 @@ class AuditeurController
                 return;
             }
 
-            $id = $this->model->create($data);
+            $password = $this->generateTemporaryPassword();
 
-            $this->sendResponse(201, [
+            // --- Transaction : créer auditeur + compte ---
+            $userModel  = new User();
+            $notifModel = new Notification();
+
+            // Vérifier unicité email/telephone dans users
+            if ($email !== null && $userModel->findByEmail($email) !== null) {
+                $this->sendError(409, "Un compte utilisateur avec cet email existe déjà.");
+                return;
+            }
+            if ($userModel->findByPhone($telephone) !== null) {
+                $this->sendError(409, "Ce numéro de téléphone est déjà utilisé par un autre compte.");
+                return;
+            }
+
+            // Trouver le role_id auditeur
+            $db = $userModel->getDatabase();
+            $roleId = (int) $db->query("SELECT id FROM roles WHERE code = 'auditeur' LIMIT 1")->fetchColumn();
+            if (!$roleId) {
+                $this->sendError(500, "Le rôle 'auditeur' n'existe pas. Exécutez la migration.");
+                return;
+            }
+
+            $ownTx = !$db->inTransaction();
+            if ($ownTx) {
+                $db->beginTransaction();
+            }
+            try {
+                // 1. Créer l'auditeur
+                $auditeurId = $this->model->create($data);
+
+                // 2. Créer le compte utilisateur
+                $userId = $userModel->create([
+                    'nom'       => $data['nom'],
+                    'prenom'    => $data['prenom'],
+                    'email'     => $email,
+                    'telephone' => $telephone,
+                    'password'  => $password,
+                    'role_id'   => $roleId,
+                    'actif'     => 1,
+                ]);
+
+                // Marquer first_login
+                $db->prepare("UPDATE users SET first_login = 1 WHERE id = :id")->execute(['id' => $userId]);
+
+                // 3. Lier auditeur ↔ user
+                $db->prepare("UPDATE auditeurs SET user_id = :uid WHERE id = :aid")
+                   ->execute(['uid' => $userId, 'aid' => $auditeurId]);
+
+                // 4. Notification pour retrouver le compte après connexion.
+                $login = $email ?: $telephone;
+                // Toujours créer une notification de bienvenue
+                $notifModel->createWelcome($userId, $login);
+
+                if ($ownTx) {
+                    $db->commit();
+                }
+            } catch (Throwable $error) {
+                if ($ownTx && $db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $error;
+            }
+
+            $response = [
                 'success' => true,
-                'message' => 'Auditeur créé avec succès.',
-                'data' => ['id' => $id]
-            ]);
+                'message' => 'Auditeur créé avec succès. Un compte de connexion a été généré automatiquement.',
+                'data'    => [
+                    'id'                   => $auditeurId,
+                    'user_id'              => $userId,
+                    'nom'                  => $data['nom'],
+                    'prenom'               => $data['prenom'],
+                    'matricule'            => $data['matricule'],
+                    'telephone'            => $telephone,
+                    'email'                => $email,
+                    'login'                => $login,
+                    'password_temporaire'  => $password,
+                ],
+            ];
+
+            $this->sendResponse(201, $response);
         } catch (Exception $e) {
             $this->sendError(500, "Erreur lors de la création de l'auditeur : " . $e->getMessage());
         }
@@ -202,6 +289,11 @@ class AuditeurController
             }
 
             $data = $this->getJsonInput();
+
+            if (array_key_exists('telephone', $data) && trim((string) $data['telephone']) === '') {
+                $this->sendError(400, "Le numéro de téléphone est obligatoire.");
+                return;
+            }
 
             // Vérification de l'unicité du matricule (si modifié)
             if (isset($data['matricule'])) {
@@ -224,6 +316,30 @@ class AuditeurController
                 return;
             }
 
+            $auditeur = $this->model->findWithType($id);
+            $effectiveTelephone = trim((string) ($data['telephone'] ?? $auditeur['telephone'] ?? ''));
+            if (empty($auditeur['user_id']) && $effectiveTelephone !== '') {
+                $this->createAccountForExistingAuditeur($id, $auditeur, $data);
+                return;
+            }
+            if (!empty($auditeur['user_id'])) {
+                $userModel = new User();
+                if (isset($data['email']) && $data['email'] !== '') {
+                    $existing = $userModel->findByEmail(trim((string) $data['email']));
+                    if ($existing !== null && (int) $existing['id'] !== (int) $auditeur['user_id']) {
+                        $this->sendError(409, "Cet email est déjà utilisé par un autre compte.");
+                        return;
+                    }
+                }
+                if (isset($data['telephone']) && $data['telephone'] !== '') {
+                    $existing = $userModel->findByPhone(trim((string) $data['telephone']));
+                    if ($existing !== null && (int) $existing['id'] !== (int) $auditeur['user_id']) {
+                        $this->sendError(409, "Ce téléphone est déjà utilisé par un autre compte.");
+                        return;
+                    }
+                }
+            }
+
             $error = $this->normalizeEmployment($data);
             if ($error !== null) {
                 $this->sendError(400, $error);
@@ -233,6 +349,20 @@ class AuditeurController
             $success = $this->model->update($id, $data);
 
             if ($success) {
+                // Garder le compte de connexion synchronisé avec le dossier auditeur.
+                $auditeur = $this->model->findWithType($id);
+                if (!empty($auditeur['user_id'])) {
+                    $userUpdate = [];
+                    foreach (['nom', 'prenom', 'telephone', 'email'] as $field) {
+                        if (array_key_exists($field, $data)) {
+                            $userUpdate[$field] = $data[$field] === '' ? null : $data[$field];
+                        }
+                    }
+                    if (!empty($userUpdate)) {
+                        $userModel = new User();
+                        $userModel->update((int) $auditeur['user_id'], $userUpdate);
+                    }
+                }
                 $this->sendResponse(200, [
                     'success' => true,
                     'message' => 'Auditeur mis à jour avec succès.'
@@ -307,6 +437,102 @@ class AuditeurController
         }
 
         return null;
+    }
+
+    private function createAccountForExistingAuditeur(int $id, array $auditeur, array $data): void
+    {
+        $telephone = trim((string) ($data['telephone'] ?? $auditeur['telephone'] ?? ''));
+        if ($telephone === '') {
+            $this->sendError(400, 'Un numéro de téléphone est obligatoire pour créer le compte de cet auditeur.');
+            return;
+        }
+        $email = isset($data['email']) && trim((string) $data['email']) !== ''
+            ? trim((string) $data['email'])
+            : null;
+        if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $this->sendError(400, "L'email fourni n'est pas valide.");
+            return;
+        }
+
+        $userModel = new User();
+        if ($email !== null && $userModel->findByEmail($email) !== null) {
+            $this->sendError(409, "Un compte utilisateur avec cet email existe déjà.");
+            return;
+        }
+        if ($userModel->findByPhone($telephone) !== null) {
+            $this->sendError(409, "Ce numéro de téléphone est déjà utilisé par un autre compte.");
+            return;
+        }
+
+        $db = $userModel->getDatabase();
+        $roleId = (int) $db->query("SELECT id FROM roles WHERE code = 'auditeur' LIMIT 1")->fetchColumn();
+        if (!$roleId) {
+            $this->sendError(500, "Le rôle 'auditeur' n'existe pas. Exécutez la migration.");
+            return;
+        }
+
+        $profile = array_replace($auditeur, $data, ['telephone' => $telephone, 'email' => $email]);
+        $password = $this->generateTemporaryPassword();
+        $login = $email ?: $telephone;
+        $notifications = new Notification();
+        $ownTx = !$db->inTransaction();
+        if ($ownTx) {
+            $db->beginTransaction();
+        }
+        try {
+            $this->model->update($id, [
+                'matricule' => $profile['matricule'],
+                'nom' => $profile['nom'],
+                'prenom' => $profile['prenom'],
+                'sexe' => $profile['sexe'] ?? null,
+                'telephone' => $telephone,
+                'email' => $email,
+                'id_position' => $profile['id_position'] ?? null,
+                'id_type_employe' => $profile['id_type_employe'] ?? null,
+            ]);
+            $userId = $userModel->create([
+                'nom' => $profile['nom'],
+                'prenom' => $profile['prenom'],
+                'email' => $email,
+                'telephone' => $telephone,
+                'password' => $password,
+                'role_id' => $roleId,
+                'actif' => 1,
+            ]);
+            $db->prepare('UPDATE users SET first_login = 1 WHERE id = :id')->execute(['id' => $userId]);
+            $db->prepare('UPDATE auditeurs SET user_id = :user_id WHERE id = :id')
+                ->execute(['user_id' => $userId, 'id' => $id]);
+            $notifications->createWelcome($userId, $login);
+            if ($ownTx) {
+                $db->commit();
+            }
+        } catch (Throwable $error) {
+            if ($ownTx && $db->inTransaction()) {
+                $db->rollBack();
+            }
+            throw $error;
+        }
+
+        $this->sendResponse(200, [
+            'success' => true,
+            'message' => 'Le dossier auditeur et son compte de connexion ont été mis à jour.',
+            'data' => [
+                'id' => $id,
+                'user_id' => $userId,
+                'nom' => $profile['nom'],
+                'prenom' => $profile['prenom'],
+                'matricule' => $profile['matricule'],
+                'telephone' => $telephone,
+                'email' => $email,
+                'login' => $login,
+                'password_temporaire' => $password,
+            ],
+        ]);
+    }
+
+    private function generateTemporaryPassword(): string
+    {
+        return random_int(100000, 999999) . 'Ages!';
     }
 
     private function getJsonInput(): array

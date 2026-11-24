@@ -71,18 +71,25 @@ class ParametreEvaluationController
             $data['bareme'] = round((float) $data['bareme'], 2);
 
             $id_evaluation = isset($data['id_evaluation']) ? (int) $data['id_evaluation'] : null;
-            $ordre = isset($data['ordre']) ? (int) $data['ordre'] : 1;
+            $ordre = isset($data['ordre']) ? (int) $data['ordre'] : null;
             $db = $this->model->getDatabase();
             $db->beginTransaction();
             $id = $this->model->create($data);
             if ($id_evaluation !== null) {
+                if ($ordre === null) {
+                    $linked = array_values(array_filter(
+                        $this->model->getByEvaluation($id_evaluation),
+                        static fn(array $parameter): bool => (int) $parameter['id'] === $id
+                    ));
+                    $ordre = (int) ($linked[0]['ordre'] ?? 1);
+                }
                 $this->model->attachToEvaluation($id_evaluation, $id, $ordre);
             }
             $db->commit();
 
             $this->sendResponse(201, [
                 'success' => true,
-                'message' => 'Paramètre créé avec succès.',
+                'message' => 'Paramètre créé et associé automatiquement aux évaluations existantes.',
                 'data' => ['id' => $id]
             ]);
         } catch (InvalidArgumentException $e) {

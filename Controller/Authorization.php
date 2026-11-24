@@ -14,6 +14,7 @@ final class Authorization
         'sessions' => 'organisation-pedagogique',
         'groupes' => 'organisation-pedagogique',
         'emplois-du-temps' => 'emplois-temps',
+        'affectations-ponctuelles' => 'emplois-temps',
         'planification' => 'emplois-temps',
         'formations' => 'organisation-pedagogique',
         'auditeurs' => 'auditeurs',
@@ -38,6 +39,7 @@ final class Authorization
         'roles' => 'utilisateurs',
         'journal' => 'utilisateurs',
         'rapports' => 'organisation-pedagogique',
+        'auditeur' => 'auditeur-espace',
     ];
 
     /** Routes POST /planification/{verbe} qui ne modifient rien (droit de lecture suffisant). */
@@ -159,10 +161,11 @@ final class Authorization
         $db = Database::getInstance();
         $stmt = $db->prepare(
             "SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.actif, u.token_version,
-                    u.last_login, u.created_at, u.updated_at, u.role_id,
+                   u.last_login, u.first_login, u.created_at, u.updated_at, u.role_id,
                     r.code AS role_code, r.nom AS role_nom,
                     (SELECT f.id FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_id,
-                    (SELECT f.matricule FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_matricule
+                   (SELECT f.matricule FROM formateurs f WHERE f.user_id = u.id ORDER BY f.id LIMIT 1) AS formateur_matricule,
+                   (SELECT a.id FROM auditeurs a WHERE a.user_id = u.id ORDER BY a.id LIMIT 1) AS auditeur_id
              FROM users u
              JOIN roles r ON r.id = u.role_id
              WHERE u.id = :id
@@ -217,7 +220,34 @@ final class Authorization
 
     public static function authorizeRequest(string $resource, string $method, ?string $param1, ?string $param2): void
     {
-        if ($resource === 'auth' || ($resource === 'users' && $param1 === 'authenticate')) {
+        if ($resource === 'auth') {
+            if ($method === 'POST' && in_array($param1, ['login', 'refresh'], true)) {
+                return;
+            }
+            $user = self::currentUser();
+            $allowedDuringFirstLogin = ($method === 'GET' && $param1 === 'me')
+                || ($method === 'PUT' && $param1 === 'profile')
+                || ($method === 'POST' && in_array($param1, ['logout', 'logout-all'], true));
+            if ($user !== null && !empty($user['first_login']) && !$allowedDuringFirstLogin) {
+                throw new RuntimeException('Modifiez votre mot de passe temporaire avant d’accéder à cette fonctionnalité.', 403);
+            }
+            return;
+        }
+        if ($resource === 'users' && $param1 === 'authenticate') {
+            return;
+        }
+
+        // L'espace auditeur (/auditeur/*) est autorisé pour tout utilisateur connecté
+        // avec le rôle 'auditeur' — le contrôleur vérifie le rôle lui-même.
+        if ($resource === 'auditeur') {
+            $user = self::currentUser();
+            if ($user === null) {
+                $tokenError = self::bearerError();
+                throw new RuntimeException($tokenError !== null ? "Jeton d'accès refusé : {$tokenError}" : 'Authentification requise.', 401);
+            }
+            if (!empty($user['first_login']) && !($method === 'PUT' && $param1 === 'profil')) {
+                throw new RuntimeException('Modifiez votre mot de passe temporaire avant d’accéder à cette fonctionnalité.', 403);
+            }
             return;
         }
 
@@ -230,6 +260,9 @@ final class Authorization
         if ($user === null) {
             $tokenError = self::bearerError();
             throw new RuntimeException($tokenError !== null ? "Jeton d’accès refusé : {$tokenError}" : 'Authentification requise.', 401);
+        }
+        if (!empty($user['first_login'])) {
+            throw new RuntimeException('Modifiez votre mot de passe temporaire avant d’accéder à cette fonctionnalité.', 403);
         }
 
         if ($user['role_code'] === 'admin') {

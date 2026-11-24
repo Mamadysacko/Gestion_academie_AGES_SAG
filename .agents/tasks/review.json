@@ -1,0 +1,26 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "file": "database/migration_first_login.sql",
+      "description": "La migration repose sur la variable de session MySQL @col_exists, qui peut valoir NULL si le runner exécute chaque instruction dans une connexion séparée. IF(NULL = 0, …) évalue à FALSE et l'ALTER TABLE est silencieusement ignoré, laissant la colonne first_login absente et faisant planter Authorization::currentUser(). Remplacer par ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login TINYINT(1) NOT NULL DEFAULT 0 (MySQL 8+)."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "Controller/InscriptionController.php",
+      "description": "searchAuditeur() appelle Database::getInstance() directement sans require_once dans son fichier. La classe Database est disponible uniquement parce que Inscription.php est chargé avant. Ajouter require_once __DIR__ . '/../config/Database.php' en tête du contrôleur pour supprimer cette dépendance implicite."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "Controller/AuditeurEspaceController.php",
+      "description": "La requête SQL de getAlertes() pour les évaluations à venir joint evaluations → sessions → emplois_du_temps → inscriptions sans déduplication. Un auditeur inscrit dans plusieurs créneaux de la même session reçoit plusieurs alertes pour la même évaluation. Ajouter GROUP BY e.id ou SELECT DISTINCT e.id à la requête."
+    },
+    {
+      "severity": "MEDIUM",
+      "file": "Controller/FicheNotesController.php",
+      "description": "printFicheNotes() envoie des echo avant la fin de la construction de la page. Si une exception survient après le premier echo, headers_sent() est vrai et le client reçoit un document HTML coupé plutôt qu'un JSON d'erreur. Ouvrir un ob_start() local en début de méthode et ne flusher qu'après la construction complète."
+    }
+  ],
+  "reviewDoc": "c:\\xampp\\htdocs\\Backend_AGES\\.agents\\tasks\\review.md"
+}

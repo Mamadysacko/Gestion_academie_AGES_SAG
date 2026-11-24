@@ -131,7 +131,7 @@ class AuthController
             'path' => $base . '/',
             'httponly' => true,
             'samesite' => 'Lax',
-            'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            'secure' => AGES_COOKIE_SECURE,
         ]);
     }
 

@@ -226,4 +226,14 @@ class Formateur extends Model
             ['user_id' => $user_id]
         );
     }
+
+    public function fetchProfileRoom(int $id): array
+    {
+        return $this->fetchOne(
+            'SELECT f.id_salle, sa.code AS salle_code, sa.libelle AS salle_libelle
+             FROM formateurs f LEFT JOIN salles sa ON sa.id = f.id_salle
+             WHERE f.id = :id LIMIT 1',
+            ['id' => $id]
+        ) ?? ['id_salle' => null, 'salle_code' => null, 'salle_libelle' => null];
+    }
 }

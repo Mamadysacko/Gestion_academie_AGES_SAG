@@ -5,22 +5,34 @@
  */
 
 // ── Session, CORS & JSON ─────────────────────────────────────────────────────
+require_once __DIR__ . '/../../config/config.php';
+
 if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params([
-        'httponly' => true,
-        'samesite' => 'Lax',
-        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
-    ]);
     session_start();
 }
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigins = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost',
-    'http://127.0.0.1',
-];
+$allowedOriginsSetting = getenv('AGES_CORS_ALLOWED_ORIGINS');
+$allowedOrigins = $allowedOriginsSetting === false
+    ? ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost', 'http://127.0.0.1']
+    : array_values(array_filter(array_map(
+        static function (string $candidate): string {
+            $candidate = rtrim(trim($candidate), '/');
+            $parts = parse_url($candidate);
+            if (!is_array($parts)
+                || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
+                || empty($parts['host'])
+                || isset($parts['user'])
+                || isset($parts['pass'])
+                || isset($parts['query'])
+                || isset($parts['fragment'])
+                || !empty($parts['path'])) {
+                return '';
+            }
+            return $candidate;
+        },
+        explode(',', $allowedOriginsSetting)
+    )));
 if (in_array($origin, $allowedOrigins, true)) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Access-Control-Allow-Credentials: true');
