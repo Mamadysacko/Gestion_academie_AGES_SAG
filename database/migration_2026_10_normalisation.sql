@@ -32,7 +32,7 @@ SET @annee_courante = (SELECT id FROM annees_scolaires WHERE CURDATE() BETWEEN d
 UPDATE annees_scolaires SET statut = 1 WHERE @annees_actives = 0 AND id = @annee_courante;
 
 UPDATE groupes SET libelle = 'Groupe 4' WHERE code = 'G4' AND libelle = 'Groupe 3';
-UPDATE roles SET nom = REPLACE(nom, 'Administrative er Comptable', 'Administrative et Comptable');
+UPDATE roles SET nom = REPLACE(nom, 'Administrative er Comptable', 'Administrative ');
 UPDATE users SET nom = TRIM(nom), prenom = TRIM(prenom), email = NULLIF(TRIM(email), ''), telephone = NULLIF(TRIM(telephone), '');
 UPDATE formateurs SET nom = TRIM(nom), prenom = TRIM(prenom), matricule = TRIM(matricule);
 

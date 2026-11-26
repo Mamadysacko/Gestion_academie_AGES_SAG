@@ -74,6 +74,14 @@ class Journal extends Model
     {
         $where = [];
         $params = [];
+        if (!empty($filters['role_code'])) {
+            $where[] = 'role_code = :role_code';
+            $params['role_code'] = $filters['role_code'];
+        }
+        if (!empty($filters['user_id'])) {
+            $where[] = 'user_id = :user_id';
+            $params['user_id'] = (int) $filters['user_id'];
+        }
         if (!empty($filters['ressource'])) {
             $where[] = 'ressource = :ressource';
             $params['ressource'] = $filters['ressource'];

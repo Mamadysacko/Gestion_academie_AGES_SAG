@@ -12,7 +12,7 @@ if ($method !== 'GET' || $param1 !== null) {
 }
 
 require_once __DIR__ . '/../../Model/Journal.php';
-$filters = array_intersect_key($_GET, array_flip(['q', 'ressource', 'action', 'succes', 'debut', 'fin']));
+$filters = array_intersect_key($_GET, array_flip(['q', 'ressource', 'action', 'succes', 'debut', 'fin', 'user_id', 'role_code']));
 $limit = (int) ($_GET['limit'] ?? 300);
 echo json_encode([
     'success' => true,
